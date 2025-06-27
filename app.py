@@ -74,8 +74,8 @@ def expand_search_keywords(keyword):
     
     return [keyword]
 
-def apply_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by):
-    """Apply filtering and sorting to channel results"""
+def apply_enhanced_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by):
+    """Apply enhanced filtering and sorting to channel results"""
     filtered_channels = []
     
     for channel in channels:
@@ -83,41 +83,99 @@ def apply_filters(channels, min_subscribers, max_subscribers, min_videos, sort_b
         try:
             subscriber_count = int(channel.get('subscriber_count', '0').replace(',', ''))
             video_count = int(channel.get('video_count', '0').replace(',', ''))
+            view_count = int(channel.get('view_count', '0').replace(',', ''))
         except (ValueError, AttributeError):
             subscriber_count = 0
             video_count = 0
+            view_count = 0
         
-        # Calculate engagement metrics
+        # Store numeric values for easier processing
+        channel['subscriber_count_num'] = subscriber_count
+        channel['video_count_num'] = video_count
+        channel['view_count_num'] = view_count
+        
+        # Calculate advanced engagement metrics
         try:
-            view_count = int(channel.get('view_count', '0').replace(',', ''))
-            engagement_rate = view_count / max(subscriber_count, 1) if subscriber_count > 0 else 0
-            channel['engagement_rate'] = engagement_rate
+            if subscriber_count > 0:
+                views_per_subscriber = view_count / subscriber_count
+                videos_per_year = video_count / max(1, ((2024 - int(channel.get('published_at', '2020')[:4])) or 1))
+                engagement_score = (views_per_subscriber * 0.7) + (videos_per_year * 0.3)
+            else:
+                views_per_subscriber = 0
+                videos_per_year = 0
+                engagement_score = 0
+                
+            channel['views_per_subscriber'] = views_per_subscriber
+            channel['videos_per_year'] = videos_per_year
+            channel['engagement_score'] = engagement_score
         except:
-            channel['engagement_rate'] = 0
+            channel['views_per_subscriber'] = 0
+            channel['videos_per_year'] = 0
+            channel['engagement_score'] = 0
         
-        # Apply subscriber filters
-        if min_subscribers and subscriber_count < int(min_subscribers):
-            continue
-        if max_subscribers and subscriber_count > int(max_subscribers):
-            continue
+        # Apply subscriber filters with better handling
+        if min_subscribers:
+            try:
+                min_sub_value = int(min_subscribers)
+                if subscriber_count < min_sub_value:
+                    continue
+            except ValueError:
+                pass
+                
+        if max_subscribers:
+            try:
+                max_sub_value = int(max_subscribers)
+                if subscriber_count > max_sub_value:
+                    continue
+            except ValueError:
+                pass
             
         # Apply video count filter
-        if min_videos and video_count < int(min_videos):
-            continue
-            
+        if min_videos:
+            try:
+                min_video_value = int(min_videos)
+                if video_count < min_video_value:
+                    continue
+            except ValueError:
+                pass
+        
+        # Quality filters - exclude channels with suspicious metrics
+        if subscriber_count > 0 and video_count > 0:
+            # Skip channels with unusually low engagement (potential inactive channels)
+            if views_per_subscriber < 0.1 and subscriber_count > 1000:
+                continue
+                
         filtered_channels.append(channel)
     
-    # Apply sorting with enhanced options
+    # Enhanced sorting options
     if sort_by == 'subscribers':
-        filtered_channels.sort(key=lambda x: int(x.get('subscriber_count', '0').replace(',', '')), reverse=True)
+        filtered_channels.sort(key=lambda x: x.get('subscriber_count_num', 0), reverse=True)
     elif sort_by == 'videos':
-        filtered_channels.sort(key=lambda x: int(x.get('video_count', '0').replace(',', '')), reverse=True)
+        filtered_channels.sort(key=lambda x: x.get('video_count_num', 0), reverse=True)
     elif sort_by == 'engagement':
-        filtered_channels.sort(key=lambda x: x.get('engagement_rate', 0), reverse=True)
+        filtered_channels.sort(key=lambda x: x.get('engagement_score', 0), reverse=True)
     elif sort_by == 'recent':
         filtered_channels.sort(key=lambda x: x.get('published_at', ''), reverse=True)
+    elif sort_by == 'email_first':
+        # Sort by email availability first, then by subscribers
+        filtered_channels.sort(key=lambda x: (
+            bool(x.get('email')),
+            x.get('subscriber_count_num', 0)
+        ), reverse=True)
+    else:  # relevance or default
+        # Sort by a combination of factors for relevance
+        filtered_channels.sort(key=lambda x: (
+            bool(x.get('email')) * 1000000,  # Prioritize channels with email
+            x.get('engagement_score', 0) * 1000,
+            x.get('subscriber_count_num', 0)
+        ), reverse=True)
     
     return filtered_channels
+
+# Keep the old function for backward compatibility
+def apply_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by):
+    """Legacy filter function - redirects to enhanced version"""
+    return apply_enhanced_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by)
 
 @app.route('/')
 def index():
@@ -126,7 +184,7 @@ def index():
 
 @app.route('/search', methods=['POST'])
 def search():
-    """Handle YouTube channel search with intelligent optimization"""
+    """Handle YouTube channel search with enhanced volume and filtering"""
     keyword = request.form.get('keyword', '').strip()
     
     if not keyword:
@@ -139,86 +197,70 @@ def search():
     min_videos = request.form.get('min_videos', '')
     sort_by = request.form.get('sort_by', 'relevance')
     
-    # Apply intelligent defaults if no filters specified
-    if not any([min_subscribers, max_subscribers, min_videos, sort_by != 'relevance']):
-        intelligent_filters = get_intelligent_filters(keyword)
-        min_subscribers = intelligent_filters['min_subscribers']
-        min_videos = intelligent_filters['min_videos']
-        sort_by = intelligent_filters['sort_by']
-        app.logger.info(f"Applied intelligent filters for '{keyword}': {intelligent_filters}")
+    # Get target results (default to 50 for high volume)
+    target_results = int(request.form.get('target_results', '50'))
     
     try:
-        # First, try to get cached results from database (only if no filters)
-        channels = []
-        use_cache = not any([min_subscribers, max_subscribers, min_videos, sort_by != 'relevance'])
+        # Always fetch fresh results for better volume and accuracy
+        app.logger.info(f"Starting enhanced search for '{keyword}' targeting {target_results} results")
         
-        if use_cache and db_service.is_connected():
-            channels = db_service.get_channels(keyword)
-            if channels:
-                app.logger.info(f"Found {len(channels)} cached channels for keyword: {keyword}")
+        # Use enhanced search with higher target
+        channels = youtube_service.search_channels(keyword, max_results=target_results * 2)  # Search for more than needed
         
-        # If no cached results, search YouTube API with expanded keywords
-        if not channels:
-            # Get expanded keywords for better discovery
-            search_keywords = expand_search_keywords(keyword)
-            all_channels = []
-            
-            for search_term in search_keywords:
-                term_channels = youtube_service.search_channels(search_term, max_results=50)
-                all_channels.extend(term_channels)
-                
-                # Limit total searches to avoid API quota issues
-                if len(all_channels) >= 150:  # Increased capacity for more results
-                    break
-            
-            # Remove duplicates based on channel_id
-            seen_ids = set()
-            channels = []
-            for channel in all_channels:
-                if channel['channel_id'] not in seen_ids:
-                    channels.append(channel)
-                    seen_ids.add(channel['channel_id'])
-            
-            app.logger.info(f"Discovered {len(channels)} unique channels from {len(search_keywords)} keyword variations")
-            
-            # Save channels to database (only unfiltered results)
-            if use_cache and db_service.is_connected() and channels:
-                db_service.save_channels(keyword, channels)
+        app.logger.info(f"Raw search returned {len(channels)} channels")
         
-        # Apply filters to results
+        # Apply filters BEFORE limiting results
         if channels:
             original_count = len(channels)
-            app.logger.info(f"Before filtering: {original_count} channels found")
-            channels = apply_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by)
-            app.logger.info(f"After filtering: {len(channels)} channels remaining")
-            if min_subscribers or max_subscribers or min_videos or sort_by != 'relevance':
-                app.logger.info(f"Filters applied - Min subs: {min_subscribers}, Max subs: {max_subscribers}, Min videos: {min_videos}, Sort: {sort_by}")
+            
+            # Apply filters with enhanced logic
+            channels = apply_enhanced_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by)
+            
+            app.logger.info(f"After filtering: {len(channels)} channels remaining from {original_count}")
+            
+            # Limit to target results after filtering
+            channels = channels[:target_results]
         
-        # Store search in history (both session and database)
+        # Store search in history
         if 'search_history' not in session:
             session['search_history'] = []
         
         search_entry = {
             'keyword': keyword,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'results_count': len(channels)
+            'results_count': len(channels),
+            'filters_applied': {
+                'min_subscribers': min_subscribers,
+                'max_subscribers': max_subscribers,
+                'min_videos': min_videos,
+                'sort_by': sort_by
+            }
         }
         
-        # Add to session history
         session['search_history'].insert(0, search_entry)
         session['search_history'] = session['search_history'][:50]
         session.modified = True
         
-        # Save to database
+        # Save to database if connected
         if db_service.is_connected():
             session_id = session.get('session_id', str(id(session)))
             db_service.save_search_history(keyword, len(channels), session_id)
         
         if not channels:
-            flash(f'No channels found for keyword: {keyword}', 'info')
+            flash(f'No channels found matching your criteria for keyword: {keyword}', 'info')
             return redirect(url_for('index'))
         
-        return render_template('results.html', channels=channels, keyword=keyword)
+        # Add pagination info
+        pagination_info = {
+            'total_results': len(channels),
+            'has_email': len([ch for ch in channels if ch.get('email')]),
+            'filters_applied': bool(min_subscribers or max_subscribers or min_videos or sort_by != 'relevance')
+        }
+        
+        return render_template('results.html', 
+                             channels=channels, 
+                             keyword=keyword, 
+                             pagination=pagination_info)
         
     except Exception as e:
         app.logger.error(f"Search error for keyword '{keyword}': {str(e)}")

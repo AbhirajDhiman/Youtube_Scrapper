@@ -19,6 +19,20 @@
             <div class="card shadow-sm">
                 <div class="card-body p-4">
                     <form method="POST" action="{{ url_for('search') }}" class="needs-validation" novalidate>
+                        
+                        <!-- Target Results -->
+                        <div class="mb-3">
+                            <label for="target_results" class="form-label">
+                                <i class="fas fa-target me-2"></i>Target Number of Results
+                            </label>
+                            <select class="form-select" id="target_results" name="target_results">
+                                <option value="25">25 Channels</option>
+                                <option value="50" selected>50 Channels</option>
+                                <option value="75">75 Channels</option>
+                                <option value="100">100 Channels</option>
+                            </select>
+                            <div class="form-text">Higher numbers may take longer to process</div>
+                        </div>
                         <div class="mb-4">
                             <label for="keyword" class="form-label">
                                 <i class="fas fa-search me-2"></i>Search Keyword
