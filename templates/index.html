@@ -1,233 +1,229 @@
-
 {% extends "base.html" %}
 
-{% block title %}YouTube Channel Discovery - Advanced Search{% endblock %}
+{% block title %}YouTube Channel Discovery - Professional Creator Research Platform{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <div class="text-center mb-5">
-                <h1 class="display-4 text-primary mb-3">
-                    <i class="fas fa-search me-3"></i>YouTube Channel Discovery
-                </h1>
-                <p class="lead text-muted">Find high-quality YouTube channels with advanced filtering and contact enrichment</p>
-            </div>
+<!-- Full-Width Hero Section -->
+<section class="hero-section-main">
+    <div class="hero-background">
+        <div class="hero-grid"></div>
+        <div class="hero-gradient"></div>
+    </div>
 
-            <!-- Quota Status Alert -->
-            {% if quota_status %}
-            <div class="alert alert-info mb-4">
-                <i class="fas fa-chart-bar me-2"></i>
-                <strong>API Quota Status:</strong> 
-                {{ quota_status.quota_used }}/{{ quota_status.quota_remaining + quota_status.quota_used }} requests used today
-                {% if quota_status.quota_exceeded %}
-                <span class="badge bg-warning ms-2">Quota Exceeded</span>
-                {% endif %}
-            </div>
-            {% endif %}
+    <div class="container-fluid">
+        <div class="row justify-content-center min-vh-100 align-items-center">
+            <div class="col-lg-10 col-xl-8">
+                <!-- Hero Content -->
+                <div class="hero-content text-center fade-in-hero">
+                    <div class="hero-badge mb-4">
+                        <span class="badge-content">
+                            <i class="fas fa-rocket me-2"></i>
+                            Professional Creator Research Platform
+                        </span>
+                    </div>
 
-            <!-- Search Form -->
-            <div class="card shadow-lg">
-                <div class="card-header bg-primary text-white">
-                    <h3 class="mb-0"><i class="fas fa-filter me-2"></i>Advanced Channel Search</h3>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for('search') }}">
-                        <!-- Keyword Search -->
-                        <div class="row mb-4">
-                            <div class="col-md-8">
-                                <label for="keyword" class="form-label fw-bold">Search Keyword</label>
-                                <input type="text" class="form-control form-control-lg" id="keyword" name="keyword" 
-                                       placeholder="e.g., gaming, cooking, tech reviews, Hindi gaming" required>
-                                <div class="form-text">Enter keywords to find relevant YouTube channels</div>
+                    <h1 class="hero-title mb-4">
+                        Discover High-Quality
+                        <span class="hero-title-accent">YouTube Channels</span>
+                        with Precision
+                    </h1>
+
+                    <p class="hero-subtitle mb-5">
+                        Advanced analytics, contact enrichment, and comprehensive filtering for content creators, 
+                        marketers, and researchers. Find your perfect collaboration partners in seconds.
+                    </p>
+
+                    <!-- Advanced Search Section -->
+                    <div class="hero-search-container mb-5">
+                        <form method="POST" action="{{ url_for('search') }}" class="hero-search-form">
+                            <div class="search-input-group">
+                                <div class="search-icon">
+                                    <i class="fas fa-search"></i>
+                                </div>
+                                <input type="text" 
+                                       class="hero-search-input" 
+                                       id="keyword" 
+                                       name="keyword" 
+                                       placeholder="Search for tech reviews, gaming, cooking, travel..."
+                                       required 
+                                       autocomplete="off">
+                                <button type="button" class="hero-filters-btn" onclick="toggleAdvancedFilters()">
+                                    <i class="fas fa-sliders-h me-2"></i>
+                                    <span>Filters</span>
+                                </button>
+                                <button type="submit" class="hero-search-btn">
+                                    <span class="btn-text">Discover</span>
+                                    <i class="fas fa-arrow-right ms-2"></i>
+                                </button>
                             </div>
-                            <div class="col-md-4">
-                                <label for="max_results" class="form-label fw-bold">Max Results</label>
-                                <select class="form-select form-select-lg" id="max_results" name="max_results">
-                                    <option value="25">25 channels</option>
-                                    <option value="50" selected>50 channels</option>
-                                    <option value="100">100 channels</option>
-                                    <option value="200">200 channels</option>
-                                </select>
-                            </div>
-                        </div>
 
-                        <!-- Advanced Filters -->
-                        <div class="accordion mb-4" id="filtersAccordion">
-                            <!-- Subscriber Filters -->
-                            <div class="accordion-item">
-                                <h2 class="accordion-header">
-                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                            data-bs-target="#subscriberFilters">
-                                        <i class="fas fa-users me-2"></i>Subscriber Count Filters
-                                    </button>
-                                </h2>
-                                <div id="subscriberFilters" class="accordion-collapse collapse" data-bs-parent="#filtersAccordion">
-                                    <div class="accordion-body">
-                                        <div class="row">
-                                            <div class="col-md-6">
-                                                <label for="min_subscribers" class="form-label">Minimum Subscribers</label>
-                                                <input type="number" class="form-control" id="min_subscribers" name="min_subscribers" 
-                                                       placeholder="e.g., 1000" min="0">
-                                                <div class="form-text">Leave empty for no minimum</div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="max_subscribers" class="form-label">Maximum Subscribers</label>
-                                                <input type="number" class="form-control" id="max_subscribers" name="max_subscribers" 
-                                                       placeholder="e.g., 100000" min="0">
-                                                <div class="form-text">Leave empty for no maximum</div>
-                                            </div>
+                            <!-- Advanced Filters Panel -->
+                            <div id="advanced-filters-panel" class="advanced-filters-panel mt-4" style="display: none;">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label-modern">Min Subscribers</label>
+                                        <input type="number" class="form-control-modern" name="min_subscribers" placeholder="1,000">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label-modern">Max Subscribers</label>
+                                        <input type="number" class="form-control-modern" name="max_subscribers" placeholder="100,000">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label-modern">Min Videos</label>
+                                        <input type="number" class="form-control-modern" name="min_videos" placeholder="10">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label-modern">Max Videos</label>
+                                        <input type="number" class="form-control-modern" name="max_videos" placeholder="1,000">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label-modern">Upload Frequency (per week)</label>
+                                        <input type="number" class="form-control-modern" name="min_upload_frequency" step="0.1" placeholder="1">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label-modern">Max Results</label>
+                                        <select class="form-control-modern" name="max_results">
+                                            <option value="25">25 channels</option>
+                                            <option value="50" selected>50 channels</option>
+                                            <option value="100">100 channels</option>
+                                            <option value="200">200 channels</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <!-- Quick Presets -->
+                                <div class="filter-presets mt-4">
+                                    <h6 class="preset-title mb-3">Quick Presets</h6>
+                                    <div class="row g-2">
+                                        <div class="col-6 col-md-3">
+                                            <button type="button" class="preset-card-small" data-preset="micro">
+                                                <i class="fas fa-seedling"></i>
+                                                <span>Micro</span>
+                                            </button>
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <button type="button" class="preset-card-small" data-preset="growing">
+                                                <i class="fas fa-chart-line"></i>
+                                                <span>Growing</span>
+                                            </button>
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <button type="button" class="preset-card-small" data-preset="established">
+                                                <i class="fas fa-crown"></i>
+                                                <span>Established</span>
+                                            </button>
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <button type="button" class="preset-card-small" data-preset="active">
+                                                <i class="fas fa-fire"></i>
+                                                <span>Active</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Video Count Filters -->
-                            <div class="accordion-item">
-                                <h2 class="accordion-header">
-                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                            data-bs-target="#videoFilters">
-                                        <i class="fas fa-video me-2"></i>Video Count Filters
-                                    </button>
-                                </h2>
-                                <div id="videoFilters" class="accordion-collapse collapse" data-bs-parent="#filtersAccordion">
-                                    <div class="accordion-body">
-                                        <div class="row">
-                                            <div class="col-md-6">
-                                                <label for="min_videos" class="form-label">Minimum Videos</label>
-                                                <input type="number" class="form-control" id="min_videos" name="min_videos" 
-                                                       placeholder="e.g., 10" min="0">
-                                                <div class="form-text">Ensure channel has enough content</div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="max_videos" class="form-label">Maximum Videos</label>
-                                                <input type="number" class="form-control" id="max_videos" name="max_videos" 
-                                                       placeholder="e.g., 1000" min="0">
-                                                <div class="form-text">Filter out spam channels</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                            <!-- Quick Search Options -->
+                            <div class="quick-search-tags mt-3">
+                                <small class="text-muted me-3">Popular searches:</small>
+                                <span class="quick-tag" data-search="tech reviews">Tech Reviews</span>
+                                <span class="quick-tag" data-search="gaming">Gaming</span>
+                                <span class="quick-tag" data-search="cooking tutorials">Cooking</span>
+                                <span class="quick-tag" data-search="travel vlogs">Travel</span>
+                                <span class="quick-tag" data-search="fitness">Fitness</span>
                             </div>
+                        </form>
+                    </div>
 
-                            <!-- Activity Filters -->
-                            <div class="accordion-item">
-                                <h2 class="accordion-header">
-                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                            data-bs-target="#activityFilters">
-                                        <i class="fas fa-chart-line me-2"></i>Channel Activity Filters
-                                    </button>
-                                </h2>
-                                <div id="activityFilters" class="accordion-collapse collapse" data-bs-parent="#filtersAccordion">
-                                    <div class="accordion-body">
-                                        <div class="row">
-                                            <div class="col-md-6">
-                                                <label for="min_upload_frequency" class="form-label">Min Upload Frequency (per week)</label>
-                                                <input type="number" class="form-control" id="min_upload_frequency" name="min_upload_frequency" 
-                                                       placeholder="e.g., 1" min="0" step="0.1">
-                                                <div class="form-text">Ensure regular content creation</div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="max_days_since_upload" class="form-label">Max Days Since Last Upload</label>
-                                                <input type="number" class="form-control" id="max_days_since_upload" name="max_days_since_upload" 
-                                                       placeholder="e.g., 30" min="1">
-                                                <div class="form-text">Filter out inactive channels</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                    <!-- Hero Stats -->
+                    <div class="hero-stats row g-4 mb-5">
+                        <div class="col-6 col-md-3">
+                            <div class="stat-item">
+                                <div class="stat-number" data-target="10000000">0</div>
+                                <div class="stat-label">Channels Analyzed</div>
                             </div>
                         </div>
-
-                        <!-- Search Button -->
-                        <div class="text-center">
-                            <button type="submit" class="btn btn-primary btn-lg px-5">
-                                <i class="fas fa-search me-2"></i>Search Channels
-                            </button>
-                            {% if session.get('search_results') %}
-                            <a href="{{ url_for('clear_results') }}" class="btn btn-outline-secondary btn-lg ms-3">
-                                <i class="fas fa-times me-2"></i>Clear Results
-                            </a>
-                            {% endif %}
+                        <div class="col-6 col-md-3">
+                            <div class="stat-item">
+                                <div class="stat-number" data-target="250000">0</div>
+                                <div class="stat-label">Contacts Found</div>
+                            </div>
                         </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Quick Filter Presets -->
-            <div class="row mt-4">
-                <div class="col-12">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Quick Filter Presets</h5>
+                        <div class="col-6 col-md-3">
+                            <div class="stat-item">
+                                <div class="stat-number" data-target="50000">0</div>
+                                <div class="stat-label">Reports Generated</div>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-3 mb-2">
-                                    <button class="btn btn-outline-primary w-100" onclick="applyPreset('micro')">
-                                        <i class="fas fa-seedling me-1"></i>Micro Influencers<br>
-                                        <small>(1K - 10K subs)</small>
-                                    </button>
-                                </div>
-                                <div class="col-md-3 mb-2">
-                                    <button class="btn btn-outline-primary w-100" onclick="applyPreset('small')">
-                                        <i class="fas fa-leaf me-1"></i>Small Channels<br>
-                                        <small>(10K - 100K subs)</small>
-                                    </button>
-                                </div>
-                                <div class="col-md-3 mb-2">
-                                    <button class="btn btn-outline-primary w-100" onclick="applyPreset('medium')">
-                                        <i class="fas fa-tree me-1"></i>Medium Channels<br>
-                                        <small>(100K - 1M subs)</small>
-                                    </button>
-                                </div>
-                                <div class="col-md-3 mb-2">
-                                    <button class="btn btn-outline-primary w-100" onclick="applyPreset('active')">
-                                        <i class="fas fa-fire me-1"></i>Active Channels<br>
-                                        <small>(Recent uploads)</small>
-                                    </button>
-                                </div>
+                        <div class="col-6 col-md-3">
+                            <div class="stat-item">
+                                <div class="stat-number" data-target="94">0</div>
+                                <div class="stat-label">Success Rate</div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- CTA Section -->
+                    <div class="hero-cta">
+                        <a href="#features" class="btn-secondary-hero me-3">
+                            <i class="fas fa-play-circle me-2"></i>
+                            Watch Demo
+                        </a>
+                        <a href="#advanced-search" class="btn-outline-hero">
+                            <i class="fas fa-sliders-h me-2"></i>
+                            Advanced Filters
+                        </a>
+                    </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- Features Overview -->
-            <div class="row mt-5">
-                <div class="col-12">
-                    <div class="card bg-dark text-white">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-star me-2"></i>Enhanced Features</h5>
+    <!-- Scroll Indicator -->
+    <div class="scroll-indicator">
+        <div class="scroll-arrow">
+            <i class="fas fa-chevron-down"></i>
+        </div>
+    </div>
+</section>
+
+<!-- API Quota Status -->
+{% if quota_status %}
+<section class="quota-status-section py-4">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="quota-status-card">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <div class="quota-info">
+                                <h6 class="quota-title">API Status</h6>
+                                <div class="quota-details">
+                                    <span class="quota-used">{{ quota_status.quota_used }}</span>
+                                    <span class="quota-separator">/</span>
+                                    <span class="quota-total">{{ quota_status.quota_remaining + quota_status.quota_used }}</span>
+                                    <small class="quota-label">requests today</small>
+                                </div>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-4 mb-3">
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-envelope fa-2x text-primary me-3"></i>
-                                        <div>
-                                            <h6 class="mb-1">Contact Enrichment</h6>
-                                            <small>Extract emails from channel descriptions and websites</small>
-                                        </div>
-                                    </div>
+                        <div class="col-md-4">
+                            {% set quota_used_percentage = (quota_status.quota_used / quota_status.quota_limit * 100) if quota_status.quota_limit > 0 else 0 %}
+                            {% set quota_available_percentage = 100 - quota_used_percentage %}
+                            <div class="quota-meter">
+                                <div class="quota-progress">
+                                    <div class="quota-bar {% if quota_available_percentage < 30 %}quota-danger{% elif quota_available_percentage < 60 %}quota-warning{% else %}quota-success{% endif %}" 
+                                         style="width: {{ quota_used_percentage }}%"></div>
                                 </div>
-                                <div class="col-md-4 mb-3">
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-chart-bar fa-2x text-success me-3"></i>
-                                        <div>
-                                            <h6 class="mb-1">Quality Metrics</h6>
-                                            <small>Upload frequency, engagement rates, channel activity</small>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-download fa-2x text-warning me-3"></i>
-                                        <div>
-                                            <h6 class="mb-1">Multiple Export Formats</h6>
-                                            <small>CSV, Excel, and JSON exports with full data</small>
-                                        </div>
-                                    </div>
+                                <div class="quota-status">
+                                    {% if quota_status.quota_exceeded or quota_available_percentage < 5 %}
+                                    <span class="status-badge status-danger">Quota Critical</span>
+                                    {% elif quota_available_percentage < 30 %}
+                                    <span class="status-badge status-danger">{{ "%.0f"|format(quota_available_percentage) }}% Available</span>
+                                    {% elif quota_available_percentage < 60 %}
+                                    <span class="status-badge status-warning">{{ "%.0f"|format(quota_available_percentage) }}% Available</span>
+                                    {% else %}
+                                    <span class="status-badge status-success">{{ "%.0f"|format(quota_available_percentage) }}% Available</span>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -236,43 +232,354 @@
             </div>
         </div>
     </div>
-</div>
+</section>
+{% endif %}
 
+<!-- Features Section -->
+<section id="features" class="features-section py-5">
+    <div class="container">
+        <div class="row justify-content-center mb-5">
+            <div class="col-lg-8 text-center">
+                <h2 class="section-title">Powerful Features for Professional Research</h2>
+                <p class="section-subtitle">Everything you need to discover, analyze, and connect with YouTube creators</p>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-4 col-md-6">
+                <div class="feature-card-modern">
+                    <div class="feature-icon">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <h5 class="feature-title">Contact Enrichment</h5>
+                    <p class="feature-description">
+                        Automatically extract emails from channel descriptions, analyze linked websites, 
+                        and discover social media profiles with 95% accuracy.
+                    </p>
+                    <div class="feature-metrics">
+                        <span class="metric-badge">95% Accuracy</span>
+                        <span class="metric-badge">Multiple Sources</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6">
+                <div class="feature-card-modern">
+                    <div class="feature-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h5 class="feature-title">Quality Analytics</h5>
+                    <p class="feature-description">
+                        Comprehensive metrics including upload frequency, engagement rates, 
+                        audience retention, and predictive performance scoring.
+                    </p>
+                    <div class="feature-metrics">
+                        <span class="metric-badge">Real-time Data</span>
+                        <span class="metric-badge">Predictive Insights</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6">
+                <div class="feature-card-modern">
+                    <div class="feature-icon">
+                        <i class="fas fa-download"></i>
+                    </div>
+                    <h5 class="feature-title">Export Flexibility</h5>
+                    <p class="feature-description">
+                        Export discoveries in CSV, Excel, or JSON formats with complete 
+                        metadata, contact information, and quality metrics.
+                    </p>
+                    <div class="feature-metrics">
+                        <span class="metric-badge">3 Formats</span>
+                        <span class="metric-badge">Complete Data</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+
+<!-- Enhanced JavaScript -->
 <script>
-function applyPreset(type) {
-    switch(type) {
-        case 'micro':
-            document.getElementById('min_subscribers').value = '1000';
-            document.getElementById('max_subscribers').value = '10000';
-            break;
-        case 'small':
-            document.getElementById('min_subscribers').value = '10000';
-            document.getElementById('max_subscribers').value = '100000';
-            break;
-        case 'medium':
-            document.getElementById('min_subscribers').value = '100000';
-            document.getElementById('max_subscribers').value = '1000000';
-            break;
-        case 'active':
-            document.getElementById('max_days_since_upload').value = '7';
-            document.getElementById('min_upload_frequency').value = '1';
-            break;
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize hero animations
+    initializeHeroAnimations();
+
+    // Initialize search functionality
+    initializeHeroSearch();
+
+    // Initialize advanced search features
+    initializeAdvancedSearch();
+
+    // Initialize scroll effects
+    initializeScrollEffects();
+
+    // Animate statistics
+    animateStatistics();
+});
+
+function initializeHeroAnimations() {
+    // Staggered fade-in animation
+    const heroElements = document.querySelectorAll('.fade-in-hero > *');
+    heroElements.forEach((element, index) => {
+        element.style.opacity = '0';
+        element.style.transform = 'translateY(30px)';
+        element.style.transition = 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        element.style.transitionDelay = `${index * 0.1}s`;
+
+        setTimeout(() => {
+            element.style.opacity = '1';
+            element.style.transform = 'translateY(0)';
+        }, 100 + (index * 100));
+    });
+
+    // Hero background grid animation
+    const heroGrid = document.querySelector('.hero-grid');
+    if (heroGrid) {
+        heroGrid.style.opacity = '0';
+        setTimeout(() => {
+            heroGrid.style.transition = 'opacity 2s ease-in-out';
+            heroGrid.style.opacity = '1';
+        }, 500);
     }
-    
-    // Expand relevant accordion sections
-    const accordions = document.querySelectorAll('.accordion-collapse');
-    accordions.forEach(acc => acc.classList.add('show'));
 }
 
-// Auto-refresh quota status
-setInterval(function() {
-    fetch('/api/quota-status')
-        .then(response => response.json())
-        .then(data => {
-            // Update quota display if needed
-            console.log('Quota status:', data);
-        })
-        .catch(error => console.log('Error fetching quota status:', error));
-}, 30000); // Check every 30 seconds
+function initializeHeroSearch() {
+    const searchInput = document.getElementById('keyword');
+    const searchForm = document.querySelector('.hero-search-form');
+    const quickTags = document.querySelectorAll('.quick-tag');
+
+    // Enhanced search input interactions
+    if (searchInput) {
+        searchInput.addEventListener('focus', function() {
+            this.parentElement.classList.add('search-focused');
+        });
+
+        searchInput.addEventListener('blur', function() {
+            this.parentElement.classList.remove('search-focused');
+        });
+
+        searchInput.addEventListener('input', function() {
+            if (this.value.length > 0) {
+                this.parentElement.classList.add('search-has-value');
+            } else {
+                this.parentElement.classList.remove('search-has-value');
+            }
+        });
+    }
+
+    // Quick search tags
+    quickTags.forEach(tag => {
+        tag.addEventListener('click', function() {
+            const searchTerm = this.getAttribute('data-search');
+            if (searchInput) {
+                searchInput.value = searchTerm;
+                searchInput.focus();
+                searchInput.parentElement.classList.add('search-has-value');
+
+                // Add visual feedback
+                this.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    this.style.transform = 'scale(1)';
+                }, 150);
+            }
+        });
+    });
+
+    // Form submission enhancement
+    if (searchForm) {
+        searchForm.addEventListener('submit', function(e) {
+            const submitBtn = this.querySelector('.hero-search-btn');
+            if (submitBtn) {
+                submitBtn.classList.add('btn-loading');
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Searching...';
+            }
+        });
+    }
+}
+
+function initializeAdvancedSearch() {
+    const presetCards = document.querySelectorAll('.preset-card-small');
+    
+    // Preset filter functionality
+    presetCards.forEach(card => {
+        card.addEventListener('click', function() {
+            const preset = this.getAttribute('data-preset');
+            applyPresetFilters(preset);
+
+            // Visual feedback
+            presetCards.forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+
+            // Show success feedback
+            if (window.utils && window.utils.showToast) {
+                window.utils.showToast(`Applied ${preset} preset filters`, 'success', 2000);
+            }
+        });
+    });
+
+    // Form enhancements for filter inputs
+    const filterInputs = document.querySelectorAll('#advanced-filters-panel .form-control-modern');
+    filterInputs.forEach(input => {
+        input.addEventListener('focus', function() {
+            this.style.borderColor = 'var(--primary-color)';
+            this.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.1)';
+        });
+
+        input.addEventListener('blur', function() {
+            this.style.borderColor = '';
+            this.style.boxShadow = '';
+        });
+    });
+}
+
+function toggleAdvancedFilters() {
+    const panel = document.getElementById('advanced-filters-panel');
+    const btn = document.querySelector('.hero-filters-btn');
+    
+    if (panel.style.display === 'none' || !panel.style.display) {
+        panel.style.display = 'block';
+        btn.classList.add('active');
+        btn.innerHTML = '<i class="fas fa-times me-2"></i><span>Close</span>';
+    } else {
+        panel.style.display = 'none';
+        btn.classList.remove('active');
+        btn.innerHTML = '<i class="fas fa-sliders-h me-2"></i><span>Filters</span>';
+    }
+}
+
+function applyPresetFilters(preset) {
+    // Clear existing values
+    document.querySelectorAll('#advanced-filters-panel input[type="number"]').forEach(input => {
+        input.value = '';
+    });
+
+    // Apply preset values
+    switch(preset) {
+        case 'micro':
+            document.querySelector('input[name="min_subscribers"]').value = '1000';
+            document.querySelector('input[name="max_subscribers"]').value = '10000';
+            break;
+        case 'growing':
+            document.querySelector('input[name="min_subscribers"]').value = '10000';
+            document.querySelector('input[name="max_subscribers"]').value = '100000';
+            break;
+        case 'established':
+            document.querySelector('input[name="min_subscribers"]').value = '100000';
+            break;
+        case 'active':
+            document.querySelector('input[name="min_upload_frequency"]').value = '1';
+            break;
+    }
+}
+
+function initializeScrollEffects() {
+    // Smooth scroll for hero CTA
+    const scrollIndicator = document.querySelector('.scroll-indicator');
+    if (scrollIndicator) {
+        scrollIndicator.addEventListener('click', function() {
+            document.querySelector('#features').scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        });
+    }
+
+    // Parallax effect for hero background
+    window.addEventListener('scroll', function() {
+        const scrolled = window.pageYOffset;
+        const heroSection = document.querySelector('.hero-section-main');
+        const heroBackground = document.querySelector('.hero-background');
+
+        if (heroSection && heroBackground) {
+            const heroHeight = heroSection.offsetHeight;
+            if (scrolled < heroHeight) {
+                heroBackground.style.transform = `translateY(${scrolled * 0.5}px)`;
+                heroBackground.style.opacity = 1 - (scrolled / heroHeight) * 0.3;
+            }
+        }
+    });
+
+    // Intersection observer for feature cards
+    const observerOptions = {
+        root: null,
+        rootMargin: '-20% 0px',
+        threshold: 0.1
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('animate-in');
+            }
+        });
+    }, observerOptions);
+
+    document.querySelectorAll('.feature-card-modern, .preset-card').forEach(card => {
+        observer.observe(card);
+    });
+}
+
+function animateStatistics() {
+    const statNumbers = document.querySelectorAll('.stat-number');
+
+    const observerOptions = {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0.5
+    };
+
+    const statsObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const target = parseInt(entry.target.getAttribute('data-target'));
+                animateValue(entry.target, 0, target, 2000);
+                statsObserver.unobserve(entry.target);
+            }
+        });
+    }, observerOptions);
+
+    statNumbers.forEach(stat => {
+        statsObserver.observe(stat);
+    });
+}
+
+function animateValue(element, start, end, duration) {
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const currentValue = Math.floor(progress * (end - start) + start);
+
+        // Format numbers
+        if (end >= 1000000) {
+            element.textContent = (currentValue / 1000000).toFixed(1) + 'M+';
+        } else if (end >= 1000) {
+            element.textContent = (currentValue / 1000).toFixed(0) + 'K+';
+        } else {
+            element.textContent = currentValue + '%';
+        }
+
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        }
+    };
+    window.requestAnimationFrame(step);
+}
+
+// Add keyboard shortcut for search
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        const searchInput = document.getElementById('keyword');
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+    }
+});
 </script>
 {% endblock %}

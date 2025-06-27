@@ -1,166 +1,111 @@
 {% extends "base.html" %}
 
-{% block title %}Search History{% endblock %}
+{% block title %}Search History - YouTube Channel Discovery{% endblock %}
 
 {% block content %}
-<div class="container">
-    <!-- History Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2>
-                <i class="fas fa-history me-2"></i>
-                Search History
-            </h2>
-            <p class="text-muted mb-0">
-                {% if search_history %}
-                    {{ search_history|length }} recent searches
-                {% else %}
-                    No searches yet
-                {% endif %}
-            </p>
-        </div>
-        <div>
-            {% if search_history %}
-            <a href="{{ url_for('clear_history') }}" class="btn btn-outline-danger me-2"
-               onclick="return confirm('Are you sure you want to clear your search history?')">
-                <i class="fas fa-trash me-2"></i>Clear History
-            </a>
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="display-6 text-light mb-2">Search History</h1>
+                    <p class="text-muted">Track your research patterns and revisit previous searches</p>
+                </div>
+                <div>
+                    {% if db_connected %}
+                        <span class="badge bg-success">
+                            <i class="fas fa-database me-1"></i>Database Connected
+                        </span>
+                    {% else %}
+                        <span class="badge bg-warning">
+                            <i class="fas fa-exclamation-triangle me-1"></i>Session Only
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if history %}
+                <div class="card bg-dark border-secondary">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th><i class="fas fa-search me-2"></i>Keyword</th>
+                                        <th><i class="fas fa-chart-bar me-2"></i>Results Found</th>
+                                        <th><i class="fas fa-filter me-2"></i>Filters Applied</th>
+                                        <th><i class="fas fa-clock me-2"></i>Search Date</th>
+                                        <th><i class="fas fa-cogs me-2"></i>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for search in history %}
+                                        <tr>
+                                            <td>
+                                                <span class="fw-bold text-primary">{{ search.keyword }}</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-info">{{ search.results_count }} channels</span>
+                                            </td>
+                                            <td>
+                                                {% if search.filters %}
+                                                    <div class="d-flex flex-wrap gap-1">
+                                                        {% for key, value in search.filters.items() %}
+                                                            {% if value %}
+                                                                <small class="badge bg-secondary">{{ key }}: {{ value }}</small>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </div>
+                                                {% else %}
+                                                    <span class="text-muted">No filters</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <small class="text-muted">
+                                                    {% if search.timestamp %}
+                                                        {{ search.timestamp.strftime('%Y-%m-%d %H:%M') if search.timestamp.strftime else search.timestamp }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                </small>
+                                            </td>
+                                            <td>
+                                                <form method="POST" action="{{ url_for('search') }}" style="display: inline;">
+                                                    <input type="hidden" name="keyword" value="{{ search.keyword }}">
+                                                    {% if search.filters %}
+                                                        {% for key, value in search.filters.items() %}
+                                                            {% if value %}
+                                                                <input type="hidden" name="{{ key }}" value="{{ value }}">
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    {% endif %}
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                        <i class="fas fa-redo me-1"></i>Repeat Search
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <div class="card bg-dark border-secondary">
+                        <div class="card-body">
+                            <i class="fas fa-history fa-3x text-muted mb-3"></i>
+                            <h4 class="text-light">No Search History</h4>
+                            <p class="text-muted">Start discovering YouTube channels to build your search history.</p>
+                            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                                <i class="fas fa-search me-2"></i>Start Searching
+                            </a>
+                        </div>
+                    </div>
+                </div>
             {% endif %}
-            <a href="{{ url_for('index') }}" class="btn btn-primary">
-                <i class="fas fa-search me-2"></i>New Search
-            </a>
         </div>
     </div>
-
-    {% if search_history %}
-    <!-- History Table -->
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <div class="table-responsive">
-                <table id="historyTable" class="table table-striped table-hover">
-                    <thead>
-                        <tr>
-                            <th>Keyword</th>
-                            <th>Search Date</th>
-                            <th>Results Found</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for search in search_history %}
-                        <tr>
-                            <td>
-                                <div class="d-flex align-items-center">
-                                    <i class="fas fa-search text-primary me-2"></i>
-                                    <span class="fw-bold">{{ search.keyword }}</span>
-                                </div>
-                            </td>
-                            <td>
-                                <small class="text-muted">{{ search.timestamp }}</small>
-                            </td>
-                            <td>
-                                {% if search.results_count > 0 %}
-                                <span class="badge bg-success">
-                                    {{ search.results_count }} channels
-                                </span>
-                                {% else %}
-                                <span class="badge bg-secondary">
-                                    No results
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <form method="POST" action="{{ url_for('search') }}" class="d-inline">
-                                    <input type="hidden" name="keyword" value="{{ search.keyword }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-primary me-2"
-                                            title="Search Again">
-                                        <i class="fas fa-redo"></i>
-                                    </button>
-                                </form>
-                                {% if search.results_count > 0 %}
-                                <a href="{{ url_for('export_csv', keyword=search.keyword) }}" 
-                                   class="btn btn-sm btn-outline-success"
-                                   title="Export Results">
-                                    <i class="fas fa-download"></i>
-                                </a>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Statistics -->
-    <div class="row mt-4">
-        <div class="col-md-4">
-            <div class="card bg-primary text-white">
-                <div class="card-body text-center">
-                    <i class="fas fa-search fa-2x mb-2"></i>
-                    <h4>{{ search_history|length }}</h4>
-                    <p class="mb-0">Total Searches</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-success text-white">
-                <div class="card-body text-center">
-                    <i class="fas fa-chart-bar fa-2x mb-2"></i>
-                    <h4>{{ search_history|selectattr('results_count', 'gt', 0)|list|length }}</h4>
-                    <p class="mb-0">Successful Searches</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-info text-white">
-                <div class="card-body text-center">
-                    <i class="fab fa-youtube fa-2x mb-2"></i>
-                    <h4>{{ search_history|sum(attribute='results_count') or 0 }}</h4>
-                    <p class="mb-0">Total Channels Found</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% else %}
-    <!-- No History -->
-    <div class="text-center py-5">
-        <i class="fas fa-history fa-3x text-muted mb-3"></i>
-        <h4>No search history yet</h4>
-        <p class="text-muted">Start searching for YouTube channels to build your history</p>
-        <a href="{{ url_for('index') }}" class="btn btn-primary">
-            <i class="fas fa-search me-2"></i>Start Searching
-        </a>
-    </div>
-    {% endif %}
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-$(document).ready(function() {
-    // Initialize DataTable for history
-    $('#historyTable').DataTable({
-        "pageLength": 25,
-        "order": [[ 1, "desc" ]], // Sort by date descending
-        "columnDefs": [
-            {
-                "targets": [3], // Actions column
-                "orderable": false,
-                "searchable": false
-            }
-        ],
-        "language": {
-            "search": "Filter history:",
-            "lengthMenu": "Show _MENU_ searches per page",
-            "info": "Showing _START_ to _END_ of _TOTAL_ searches",
-            "infoEmpty": "No search history found",
-            "infoFiltered": "(filtered from _MAX_ total searches)"
-        },
-        "responsive": true
-    });
-});
-</script>
 {% endblock %}

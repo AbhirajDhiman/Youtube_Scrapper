@@ -1,3 +1,4 @@
+
 import os
 import logging
 import re
@@ -403,9 +404,14 @@ class YouTubeService:
             return {'error': error_msg}
 
     def get_quota_status(self):
-        """Get current quota status"""
+        """Get current quota usage information with safe fallbacks"""
+        quota_used = getattr(self, 'daily_quota_used', 0)
+        quota_limit = getattr(self, 'max_daily_quota', 10000)
+
         return {
-            'quota_used': self.daily_quota_used,
-            'quota_remaining': self.max_daily_quota - self.daily_quota_used,
-            'quota_exceeded': self.quota_exceeded
+            'quota_used': quota_used,
+            'quota_limit': quota_limit,
+            'quota_remaining': max(0, quota_limit - quota_used),
+            'quota_percentage': (quota_used / quota_limit) * 100 if quota_limit > 0 else 0,
+            'status': 'healthy' if quota_used < quota_limit * 0.8 else 'warning' if quota_used < quota_limit * 0.95 else 'critical'
         }

@@ -1,171 +1,140 @@
 {% extends "base.html" %}
-
-{% block title %}Database Statistics{% endblock %}
-
+```
+```html
+{% block title %}Analytics & Statistics - YouTube Channel Discovery{% endblock %}
+```
+```html
 {% block content %}
-<div class="container">
-    <!-- Stats Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2>
-                <i class="fas fa-chart-bar me-2"></i>
-                Database Statistics
-            </h2>
-            <p class="text-muted mb-0">Analytics from your YouTube channel searches</p>
-        </div>
-        <div>
-            <a href="{{ url_for('index') }}" class="btn btn-primary">
-                <i class="fas fa-search me-2"></i>New Search
-            </a>
-        </div>
-    </div>
-
-    <!-- Overview Statistics Cards -->
-    <div class="row mb-5">
-        <div class="col-md-4">
-            <div class="card bg-primary text-white">
-                <div class="card-body text-center">
-                    <i class="fas fa-database fa-3x mb-3"></i>
-                    <h3>{{ db_stats.total_searches or 0 }}</h3>
-                    <p class="mb-0">Total Searches</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-success text-white">
-                <div class="card-body text-center">
-                    <i class="fab fa-youtube fa-3x mb-3"></i>
-                    <h3>{{ db_stats.total_channels or 0 }}</h3>
-                    <p class="mb-0">Channels Discovered</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-info text-white">
-                <div class="card-body text-center">
-                    <i class="fas fa-tags fa-3x mb-3"></i>
-                    <h3>{{ db_stats.unique_keywords or 0 }}</h3>
-                    <p class="mb-0">Unique Keywords</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% if popular_keywords %}
-    <!-- Popular Keywords -->
+<div class="container mt-4">
     <div class="row">
         <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-fire me-2"></i>
-                        Most Popular Keywords
-                    </h5>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="display-6 text-light mb-2">Analytics & Statistics</h1>
+                    <p class="text-muted">Insights into your channel discovery patterns and database metrics</p>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Rank</th>
-                                    <th>Keyword</th>
-                                    <th>Search Count</th>
-                                    <th>Total Results</th>
-                                    <th>Last Searched</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for keyword_data in popular_keywords %}
-                                <tr>
-                                    <td>
-                                        <span class="badge bg-secondary">{{ loop.index }}</span>
-                                    </td>
-                                    <td>
-                                        <strong>{{ keyword_data.keyword }}</strong>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-primary">
-                                            {{ keyword_data.search_count }} searches
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-success">
-                                            {{ keyword_data.total_results }} channels
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted">{{ keyword_data.last_searched }}</small>
-                                    </td>
-                                    <td>
-                                        <form method="POST" action="{{ url_for('search') }}" class="d-inline">
-                                            <input type="hidden" name="keyword" value="{{ keyword_data.keyword }}">
-                                            <button type="submit" class="btn btn-sm btn-outline-primary"
-                                                    title="Search Again">
-                                                <i class="fas fa-redo"></i>
-                                            </button>
-                                        </form>
-                                        {% if keyword_data.total_results > 0 %}
-                                        <a href="{{ url_for('export_csv', keyword=keyword_data.keyword) }}" 
-                                           class="btn btn-sm btn-outline-success ms-1"
-                                           title="Export Results">
-                                            <i class="fas fa-download"></i>
-                                        </a>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                <div>
+                    <span class="badge bg-success">
+                        <i class="fas fa-database me-1"></i>Database Analytics
+                    </span>
                 </div>
             </div>
+
+            {% if stats %}
+                <!-- Overview Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card bg-dark border-primary">
+                            <div class="card-body text-center">
+                                <i class="fas fa-search fa-2x text-primary mb-2"></i>
+                                <h3 class="text-light">{{ stats.total_searches or 0 }}</h3>
+                                <p class="text-muted mb-0">Total Searches</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-dark border-success">
+                            <div class="card-body text-center">
+                                <i class="fab fa-youtube fa-2x text-success mb-2"></i>
+                                <h3 class="text-light">{{ stats.total_channels or 0 }}</h3>
+                                <p class="text-muted mb-0">Channels Discovered</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-dark border-warning">
+                            <div class="card-body text-center">
+                                <i class="fas fa-trending-up fa-2x text-warning mb-2"></i>
+                                <h3 class="text-light">{{ stats.popular_keywords|length or 0 }}</h3>
+                                <p class="text-muted mb-0">Popular Keywords</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-dark border-info">
+                            <div class="card-body text-center">
+                                <i class="fas fa-clock fa-2x text-info mb-2"></i>
+                                <h3 class="text-light">{{ stats.recent_activity|length or 0 }}</h3>
+                                <p class="text-muted mb-0">Recent Activities</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <!-- Popular Keywords -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-header">
+                                <h5 class="text-light mb-0">
+                                    <i class="fas fa-fire me-2"></i>Popular Keywords
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                {% if stats.popular_keywords %}
+                                    <div class="list-group list-group-flush">
+                                        {% for keyword_data in stats.popular_keywords %}
+                                            <div class="list-group-item bg-transparent border-0 d-flex justify-content-between align-items-center py-2">
+                                                <span class="text-light">{{ keyword_data.keyword }}</span>
+                                                <span class="badge bg-primary rounded-pill">{{ keyword_data.searches }}</span>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <p class="text-muted text-center">No keyword data available</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-header">
+                                <h5 class="text-light mb-0">
+                                    <i class="fas fa-history me-2"></i>Recent Activity
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                {% if stats.recent_activity %}
+                                    <div class="list-group list-group-flush">
+                                        {% for activity in stats.recent_activity %}
+                                            <div class="list-group-item bg-transparent border-0 py-2">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <span class="text-primary fw-bold">{{ activity.keyword }}</span>
+                                                        <small class="text-muted d-block">
+                                                            {{ activity.results }} results • 
+                                                            {{ activity.timestamp.strftime('%m/%d %H:%M') if activity.timestamp.strftime else activity.timestamp }}
+                                                        </small>
+                                                    </div>
+                                                    <span class="badge bg-success">{{ activity.results }}</span>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <p class="text-muted text-center">No recent activity</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <div class="card bg-dark border-secondary">
+                        <div class="card-body">
+                            <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                            <h4 class="text-light">No Statistics Available</h4>
+                            <p class="text-muted">Database statistics will appear here once you start using the application.</p>
+                            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                                <i class="fas fa-search me-2"></i>Start Discovering
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
         </div>
     </div>
-
-    {% else %}
-    <!-- No Data Message -->
-    <div class="text-center py-5">
-        <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
-        <h4>No search data yet</h4>
-        <p class="text-muted">Start searching for YouTube channels to see analytics</p>
-        <a href="{{ url_for('index') }}" class="btn btn-primary">
-            <i class="fas fa-search me-2"></i>Start Searching
-        </a>
-    </div>
-    {% endif %}
-
-    <!-- Database Connection Info -->
-    <div class="alert alert-info mt-4" role="alert">
-        <i class="fas fa-info-circle me-2"></i>
-        <strong>Database Connected:</strong> MongoDB is storing your search history and channel data for improved performance and analytics.
-    </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-$(document).ready(function() {
-    // Initialize DataTable for popular keywords if exists
-    if ($('.table tbody tr').length > 0) {
-        $('.table').DataTable({
-            "pageLength": 10,
-            "order": [[ 2, "desc" ]], // Sort by search count descending
-            "columnDefs": [
-                {
-                    "targets": [5], // Actions column
-                    "orderable": false,
-                    "searchable": false
-                }
-            ],
-            "language": {
-                "search": "Filter keywords:",
-                "lengthMenu": "Show _MENU_ keywords per page",
-                "info": "Showing _START_ to _END_ of _TOTAL_ keywords"
-            },
-            "responsive": true
-        });
-    }
-});
-</script>
 {% endblock %}
