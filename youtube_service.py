@@ -1,483 +1,411 @@
-
 import os
 import logging
 import re
 import requests
 import time
+from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from urllib.parse import urljoin, urlparse
+import whois
+from bs4 import BeautifulSoup
 
 class YouTubeService:
-    """Service class for YouTube Data API interactions with enhanced search capabilities"""
-    
     def __init__(self):
-        self.api_key = os.environ.get('GOOGLE_API_KEY')
-        if not self.api_key:
-            logging.warning("Google API key not found in environment variables. Please set GOOGLE_API_KEY.")
+        self.api_key = os.environ.get("GOOGLE_API_KEY")
         self.youtube = None
-        self._initialize_service()
-    
-    def _initialize_service(self):
-        """Initialize YouTube API service"""
+        self.quota_exceeded = False
+        self.daily_quota_used = 0
+        self.max_daily_quota = 10000  # YouTube API v3 default quota
+
         if self.api_key:
             try:
                 self.youtube = build('youtube', 'v3', developerKey=self.api_key)
                 logging.info("YouTube API service initialized successfully")
-                # Test the API key with a simple call
-                self._validate_api_key()
             except Exception as e:
-                logging.error(f"Failed to initialize YouTube API service: {str(e)}")
-                self.youtube = None
-    
-    def _validate_api_key(self):
-        """Validate API key with a simple test call"""
-        try:
-            test_response = self.youtube.search().list(
-                q="test",
-                part='snippet',
-                type='channel',
-                maxResults=1
-            ).execute()
-            logging.info("API key validation successful")
-            return True
-        except HttpError as e:
-            logging.error(f"API key validation failed: {e.resp.status} - {e.content.decode()}")
-            return False
-        except Exception as e:
-            logging.error(f"API key validation error: {str(e)}")
-            return False
-    
-    def search_channels(self, keyword, max_results=50):
-        """
-        Enhanced search for YouTube channels with multiple strategies and pagination
-        
-        Args:
-            keyword (str): Search keyword
-            max_results (int): Target number of results (will try to get close to this)
-            
-        Returns:
-            list: List of channel data dictionaries with comprehensive email extraction
-        """
-        if not self.api_key:
-            logging.error("Google API key not found in environment variables")
-            raise Exception("Google API key not found. Please set GOOGLE_API_KEY environment variable.")
-        
-        if not self.youtube:
-            logging.error("YouTube API service not initialized")
-            raise Exception("YouTube API service not available. Please check your API key.")
-        
-        logging.info(f"Starting search for keyword: '{keyword}' with max_results: {max_results}")
-        
-        all_channels = []
-        unique_channel_ids = set()
-        
-        # Multiple search strategies to get more diverse results
-        search_strategies = [
-            {'order': 'relevance', 'type': 'channel'},
-            {'order': 'viewCount', 'type': 'channel'},
-            {'order': 'date', 'type': 'channel'},
-            {'order': 'rating', 'type': 'channel'}
-        ]
-        
-        # Also search for videos and extract channel info from top video creators
-        video_strategies = [
-            {'order': 'relevance', 'type': 'video'},
-            {'order': 'viewCount', 'type': 'video'},
-            {'order': 'date', 'type': 'video'}
-        ]
-        
-        try:
-            # Phase 1: Direct channel searches with different ordering
-            for i, strategy in enumerate(search_strategies):
-                if len(all_channels) >= max_results:
-                    break
-                
-                logging.info(f"Trying search strategy {i+1}/{len(search_strategies)}: {strategy}")
-                channels = self._search_with_strategy(keyword, strategy, max_results=50)
-                logging.info(f"Strategy {i+1} returned {len(channels)} channels")
-                
-                for channel in channels:
-                    if channel['channel_id'] not in unique_channel_ids:
-                        all_channels.append(channel)
-                        unique_channel_ids.add(channel['channel_id'])
-                
-                logging.info(f"Total unique channels so far: {len(all_channels)}")
-                
-                # Small delay to avoid rate limiting
-                time.sleep(0.1)
-            
-            # Phase 2: Search videos and extract unique channels
-            for strategy in video_strategies:
-                if len(all_channels) >= max_results:
-                    break
-                    
-                video_channels = self._search_videos_for_channels(keyword, strategy, max_results=50)
-                for channel in video_channels:
-                    if channel['channel_id'] not in unique_channel_ids:
-                        all_channels.append(channel)
-                        unique_channel_ids.add(channel['channel_id'])
-                
-                time.sleep(0.1)
-            
-            # Phase 3: Related keyword searches
-            related_keywords = self._generate_related_keywords(keyword)
-            for related_keyword in related_keywords:
-                if len(all_channels) >= max_results:
-                    break
-                    
-                channels = self._search_with_strategy(related_keyword, {'order': 'relevance', 'type': 'channel'}, max_results=25)
-                for channel in channels:
-                    if channel['channel_id'] not in unique_channel_ids:
-                        all_channels.append(channel)
-                        unique_channel_ids.add(channel['channel_id'])
-                
-                time.sleep(0.1)
-            
-            # Enhanced email extraction for all channels
-            for i, channel in enumerate(all_channels):
-                enhanced_email = self._enhanced_email_extraction(channel['channel_id'], channel.get('description', ''))
-                if enhanced_email:
-                    all_channels[i]['email'] = enhanced_email
-                
-                # Add rate limiting for email extraction
-                if i % 10 == 0:
-                    time.sleep(0.2)
-            
-            # Sort by subscriber count (descending) as default
-            all_channels.sort(key=lambda x: int(x['subscriber_count'].replace(',', '') or '0'), reverse=True)
-            
-            logging.info(f"Found {len(all_channels)} unique channels for keyword: {keyword}")
-            return all_channels[:max_results]  # Return up to max_results
-            
-        except HttpError as e:
-            error_content = e.content.decode() if e.content else "No error details"
-            error_message = f"YouTube API error: {e.resp.status} - {error_content}"
-            logging.error(error_message)
-            
-            if e.resp.status == 403:
-                if "quotaExceeded" in error_content or "dailyLimitExceeded" in error_content:
-                    raise Exception("YouTube API quota exceeded. Please try again tomorrow or check your quota limits.")
-                elif "keyInvalid" in error_content:
-                    raise Exception("Invalid YouTube API key. Please check your GOOGLE_API_KEY environment variable.")
-                else:
-                    raise Exception("YouTube API access forbidden. Please check your API key permissions.")
-            elif e.resp.status == 400:
-                raise Exception(f"Invalid search parameters for keyword '{keyword}'. Error: {error_content}")
-            elif e.resp.status == 404:
-                raise Exception("YouTube API endpoint not found. Please check your API configuration.")
-            else:
-                raise Exception(f"YouTube API error {e.resp.status}: {error_content}")
-                
-        except Exception as e:
-            logging.error(f"Unexpected error in search_channels: {str(e)}")
-            if "API" not in str(e):
-                raise Exception(f"Network or connection error: {str(e)}")
-            else:
-                raise
-    
-    def _search_with_strategy(self, keyword, strategy, max_results=50):
-        """Search channels with a specific strategy"""
-        channels = []
-        next_page_token = None
-        results_per_page = min(50, max_results)  # API max is 50 per request
-        
-        try:
-            while len(channels) < max_results:
-                # Calculate how many more results we need
-                remaining_results = min(results_per_page, max_results - len(channels))
-                
-                logging.debug(f"Making API call with strategy {strategy}, remaining_results: {remaining_results}")
-                
-                search_response = self.youtube.search().list(
-                    q=keyword,
-                    part='snippet',
-                    type=strategy['type'],
-                    maxResults=remaining_results,
-                    order=strategy['order'],
-                    pageToken=next_page_token
-                ).execute()
-                
-                logging.debug(f"API response: {len(search_response.get('items', []))} items returned")
-                
-                if strategy['type'] == 'channel':
-                    channel_ids = [item['snippet']['channelId'] for item in search_response.get('items', [])]
-                else:
-                    # For video searches, extract unique channel IDs
-                    channel_ids = list(set([item['snippet']['channelId'] for item in search_response.get('items', [])]))
-                
-                if not channel_ids:
-                    break
-                
-                # Get detailed channel information
-                page_channels = self._get_channel_details(channel_ids)
-                channels.extend(page_channels)
-                
-                # Check if there's a next page
-                next_page_token = search_response.get('nextPageToken')
-                if not next_page_token:
-                    break
-                    
-        except Exception as e:
-            logging.warning(f"Error in search strategy {strategy}: {str(e)}")
-        
-        return channels
-    
-    def _search_videos_for_channels(self, keyword, strategy, max_results=50):
-        """Search videos and extract channel information"""
-        channels = []
-        channel_ids_seen = set()
-        
-        try:
-            search_response = self.youtube.search().list(
-                q=keyword,
-                part='snippet',
-                type='video',
-                maxResults=max_results,
-                order=strategy['order']
-            ).execute()
-            
-            # Extract unique channel IDs from video results
-            for item in search_response.get('items', []):
-                channel_id = item['snippet']['channelId']
-                if channel_id not in channel_ids_seen:
-                    channel_ids_seen.add(channel_id)
-            
-            # Get channel details for unique channels
-            if channel_ids_seen:
-                channels = self._get_channel_details(list(channel_ids_seen))
-                
-        except Exception as e:
-            logging.warning(f"Error in video search strategy: {str(e)}")
-        
-        return channels
-    
-    def _get_channel_details(self, channel_ids):
-        """Get detailed information for a list of channel IDs"""
-        channels = []
-        
-        # Process in batches of 50 (API limit)
-        for i in range(0, len(channel_ids), 50):
-            batch_ids = channel_ids[i:i+50]
-            
-            try:
-                channels_response = self.youtube.channels().list(
-                    part='snippet,statistics,brandingSettings',
-                    id=','.join(batch_ids)
-                ).execute()
-                
-                for channel in channels_response.get('items', []):
-                    snippet = channel['snippet']
-                    statistics = channel.get('statistics', {})
-                    branding = channel.get('brandingSettings', {})
-                    
-                    # Get comprehensive description from multiple sources
-                    description = snippet.get('description', 'No description available')
-                    branding_desc = branding.get('channel', {}).get('description', '')
-                    
-                    # Combine descriptions for better email extraction
-                    full_description = f"{description} {branding_desc}".strip()
-                    
-                    # Basic email extraction (enhanced version will be called later)
-                    email = self._extract_email_from_description(full_description)
-                    
-                    channel_data = {
-                        'title': snippet.get('title', 'N/A'),
-                        'channel_id': channel['id'],
-                        'description': description,
-                        'published_at': snippet.get('publishedAt', 'N/A'),
-                        'subscriber_count': self._format_count(statistics.get('subscriberCount', '0')),
-                        'video_count': self._format_count(statistics.get('videoCount', '0')),
-                        'view_count': self._format_count(statistics.get('viewCount', '0')),
-                        'thumbnail_url': snippet.get('thumbnails', {}).get('default', {}).get('url', ''),
-                        'custom_url': snippet.get('customUrl', ''),
-                        'country': snippet.get('country', 'N/A'),
-                        'email': email,
-                        'full_description': full_description  # Store for enhanced email extraction
-                    }
-                    
-                    channels.append(channel_data)
-                    
-            except Exception as e:
-                logging.warning(f"Error getting channel details for batch: {str(e)}")
-                continue
-        
-        return channels
-    
-    def _generate_related_keywords(self, keyword):
-        """Generate related keywords to expand search scope"""
-        keyword_lower = keyword.lower()
-        related = []
-        
-        # Gaming related expansions
-        if any(game in keyword_lower for game in ['gaming', 'game', 'fortnite', 'minecraft']):
-            related.extend([
-                f"{keyword} tutorial",
-                f"{keyword} gameplay",
-                f"{keyword} review",
-                f"{keyword} tips",
-                f"{keyword} guide"
-            ])
-        
-        # Educational content expansions
-        elif any(term in keyword_lower for term in ['tutorial', 'how to', 'learn']):
-            related.extend([
-                f"{keyword} beginner",
-                f"{keyword} advanced",
-                f"{keyword} course",
-                f"{keyword} training"
-            ])
-        
-        # General expansions
+                logging.error(f"Failed to initialize YouTube API: {str(e)}")
         else:
-            related.extend([
-                f"{keyword} channel",
-                f"{keyword} creator",
-                f"{keyword} youtuber",
-                f"best {keyword}"
-            ])
-        
-        return related[:3]  # Limit to avoid too many API calls
-    
-    def _enhanced_email_extraction(self, channel_id, description):
-        """Enhanced email extraction using multiple sources and methods"""
-        
-        # Try multiple approaches to find email
-        emails_found = []
-        
-        # 1. Enhanced regex patterns on existing description
-        email = self._extract_email_from_description(description)
-        if email:
-            emails_found.append(email)
-        
-        # 2. Try to get channel's "About" page data
+            logging.warning("No YouTube API key found in environment variables")
+
+    def check_quota_status(self):
+        """Check if quota is exceeded and log status"""
+        if self.quota_exceeded:
+            logging.warning("YouTube API quota exceeded. Please wait or use backup API key.")
+            return False
+
+        if self.daily_quota_used >= self.max_daily_quota:
+            self.quota_exceeded = True
+            logging.error(f"Daily quota limit reached: {self.daily_quota_used}/{self.max_daily_quota}")
+            return False
+
+        return True
+
+    def extract_emails_from_text(self, text):
+        """Extract email addresses from text using regex"""
+        if not text:
+            return []
+
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        emails = re.findall(email_pattern, text)
+        return list(set(emails))  # Remove duplicates
+
+    def scrape_website_for_contacts(self, url, timeout=10):
+        """Scrape website for contact information"""
+        contacts = {
+            'emails': [],
+            'social_media': {},
+            'contact_pages': []
+        }
+
         try:
-            about_section = self._get_channel_about_section(channel_id)
-            if about_section:
-                about_email = self._extract_email_from_description(about_section)
-                if about_email and about_email not in emails_found:
-                    emails_found.append(about_email)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+
+            response = requests.get(url, headers=headers, timeout=timeout)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                text_content = soup.get_text()
+
+                # Extract emails from page content
+                contacts['emails'].extend(self.extract_emails_from_text(text_content))
+
+                # Look for contact pages
+                contact_links = soup.find_all('a', href=True)
+                for link in contact_links:
+                    href = link.get('href', '').lower()
+                    if any(keyword in href for keyword in ['contact', 'about', 'privacy', 'terms']):
+                        full_url = urljoin(url, link['href'])
+                        contacts['contact_pages'].append(full_url)
+
+                # Extract social media links
+                social_patterns = {
+                    'twitter': r'(?:https?://)?(?:www\.)?twitter\.com/([A-Za-z0-9_]+)',
+                    'linkedin': r'(?:https?://)?(?:www\.)?linkedin\.com/(?:in|company)/([A-Za-z0-9_-]+)',
+                    'instagram': r'(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9_.]+)',
+                    'facebook': r'(?:https?://)?(?:www\.)?facebook\.com/([A-Za-z0-9_.]+)'
+                }
+
+                for platform, pattern in social_patterns.items():
+                    matches = re.findall(pattern, text_content)
+                    if matches:
+                        contacts['social_media'][platform] = matches[0]
+
+                # Scrape additional contact pages
+                for contact_url in contacts['contact_pages'][:3]:  # Limit to 3 pages
+                    try:
+                        contact_response = requests.get(contact_url, headers=headers, timeout=5)
+                        if contact_response.status_code == 200:
+                            contact_soup = BeautifulSoup(contact_response.content, 'html.parser')
+                            contact_text = contact_soup.get_text()
+                            contacts['emails'].extend(self.extract_emails_from_text(contact_text))
+                    except:
+                        continue
+
+        except Exception as e:
+            logging.warning(f"Error scraping website {url}: {str(e)}")
+
+        # Remove duplicates
+        contacts['emails'] = list(set(contacts['emails']))
+        return contacts
+
+    def get_whois_info(self, domain):
+        """Get WHOIS information for a domain"""
+        try:
+            w = whois.whois(domain)
+            whois_info = {
+                'emails': [],
+                'registrar': getattr(w, 'registrar', None),
+                'creation_date': getattr(w, 'creation_date', None)
+            }
+
+            # Extract emails from WHOIS data
+            if hasattr(w, 'emails') and w.emails:
+                if isinstance(w.emails, list):
+                    whois_info['emails'] = w.emails
+                else:
+                    whois_info['emails'] = [w.emails]
+
+            return whois_info
+        except Exception as e:
+            logging.warning(f"Error getting WHOIS for {domain}: {str(e)}")
+            return {'emails': [], 'registrar': None, 'creation_date': None}
+
+    def calculate_engagement_rate(self, video_stats):
+        """Calculate engagement rate from video statistics"""
+        try:
+            likes = int(video_stats.get('likeCount', 0))
+            comments = int(video_stats.get('commentCount', 0))
+            views = int(video_stats.get('viewCount', 0))
+
+            if views == 0:
+                return 0
+
+            engagement_rate = ((likes + comments) / views) * 100
+            return round(engagement_rate, 2)
         except:
-            pass
-        
-        # 3. Check recent video descriptions for contact info
+            return 0
+
+    def get_channel_quality_metrics(self, channel_id):
+        """Get detailed channel quality metrics"""
+        if not self.check_quota_status():
+            return None
+
         try:
-            recent_videos_email = self._check_recent_videos_for_email(channel_id)
-            if recent_videos_email and recent_videos_email not in emails_found:
-                emails_found.append(recent_videos_email)
-        except:
-            pass
-        
-        # Return the first valid email found
-        return emails_found[0] if emails_found else None
-    
-    def _check_recent_videos_for_email(self, channel_id):
-        """Check recent videos for email addresses in descriptions"""
-        try:
-            # Get recent videos from the channel
-            videos_response = self.youtube.search().list(
+            # Get recent videos (last 10)
+            search_request = self.youtube.search().list(
                 part='snippet',
                 channelId=channel_id,
-                type='video',
+                maxResults=10,
                 order='date',
-                maxResults=5  # Check last 5 videos
-            ).execute()
-            
-            for video in videos_response.get('items', []):
-                video_id = video['id']['videoId']
-                
-                # Get video details with description
-                video_details = self.youtube.videos().list(
-                    part='snippet',
-                    id=video_id
-                ).execute()
-                
-                if video_details.get('items'):
-                    video_description = video_details['items'][0]['snippet'].get('description', '')
-                    email = self._extract_email_from_description(video_description)
-                    if email:
-                        return email
-                        
-        except Exception as e:
-            logging.debug(f"Could not check recent videos for channel {channel_id}: {str(e)}")
-        
-        return None
-    
-    def _extract_email_from_description(self, description):
-        """Extract email addresses from text with enhanced patterns"""
-        if not description:
-            return None
-            
-        # Enhanced email regex patterns with more variations
-        email_patterns = [
-            # Standard email format
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-            
-            # Email with [at] and [dot] obfuscation
-            r'\b[A-Za-z0-9._%+-]+\s*\[\s*at\s*\]\s*[A-Za-z0-9.-]+\s*\[\s*dot\s*\]\s*[A-Z|a-z]{2,}\b',
-            
-            # Email with (at) and (dot) obfuscation
-            r'\b[A-Za-z0-9._%+-]+\s*\(\s*at\s*\)\s*[A-Za-z0-9.-]+\s*\(\s*dot\s*\)\s*[A-Z|a-z]{2,}\b',
-            
-            # Contact/business email patterns
-            r'contact\s*:?\s*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})',
-            r'email\s*:?\s*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})',
-            r'business\s*:?\s*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})',
-            r'inquiries\s*:?\s*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})',
-            r'collaborations?\s*:?\s*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})',
-            
-            # Gmail/Yahoo/Outlook specific patterns
-            r'\b[A-Za-z0-9._%+-]+@(gmail|yahoo|outlook|hotmail)\.com\b',
-            
-            # Email with spaces around @ symbol
-            r'\b[A-Za-z0-9._%+-]+\s+@\s+[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-            
-            # Email with 'AT' instead of @
-            r'\b[A-Za-z0-9._%+-]+\s*AT\s*[A-Za-z0-9.-]+\s*DOT\s*[A-Z|a-z]{2,}\b',
-        ]
-        
-        for pattern in email_patterns:
-            matches = re.findall(pattern, description, re.IGNORECASE)
-            if matches:
-                # Handle tuple results from group captures
-                email = matches[0] if isinstance(matches[0], str) else matches[0]
-                
-                # Clean up common obfuscations
-                email = email.replace('[at]', '@').replace('(at)', '@')
-                email = email.replace('[dot]', '.').replace('(dot)', '.')
-                email = email.replace(' AT ', '@').replace(' DOT ', '.')
-                email = email.replace(' @ ', '@').replace(' ', '')
-                
-                # Validate the email format
-                if re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$', email):
-                    return email.lower()
-        
-        return None
+                type='video'
+            )
+            search_response = search_request.execute()
+            self.daily_quota_used += 100
 
-    def _get_channel_about_section(self, channel_id):
-        """Get detailed channel about section for email extraction"""
-        if not self.youtube:
-            return ''
-            
-        try:
-            # Get channel details with brandingSettings part
-            response = self.youtube.channels().list(
-                part='brandingSettings',
-                id=channel_id
-            ).execute()
-            
-            if response.get('items'):
-                branding = response['items'][0].get('brandingSettings', {})
-                channel_info = branding.get('channel', {})
-                return channel_info.get('description', '')
+            video_ids = [item['id']['videoId'] for item in search_response['items']]
+
+            if not video_ids:
+                return {
+                    'upload_frequency': 0,
+                    'avg_views': 0,
+                    'avg_engagement_rate': 0,
+                    'last_upload_date': None,
+                    'total_recent_videos': 0
+                }
+
+            # Get video statistics
+            videos_request = self.youtube.videos().list(
+                part='statistics,snippet',
+                id=','.join(video_ids)
+            )
+            videos_response = videos_request.execute()
+            self.daily_quota_used += 1
+
+            # Calculate metrics
+            total_views = 0
+            total_engagement = 0
+            upload_dates = []
+
+            for video in videos_response['items']:
+                stats = video['statistics']
+                snippet = video['snippet']
+
+                views = int(stats.get('viewCount', 0))
+                total_views += views
+
+                engagement = self.calculate_engagement_rate(stats)
+                total_engagement += engagement
+
+                # Parse upload date
+                upload_date = datetime.strptime(snippet['publishedAt'][:10], '%Y-%m-%d')
+                upload_dates.append(upload_date)
+
+            # Calculate averages and frequency
+            video_count = len(videos_response['items'])
+            avg_views = total_views // video_count if video_count > 0 else 0
+            avg_engagement_rate = total_engagement / video_count if video_count > 0 else 0
+
+            # Calculate upload frequency (videos per week)
+            if len(upload_dates) > 1:
+                date_range = (max(upload_dates) - min(upload_dates)).days
+                upload_frequency = (video_count / max(date_range, 1)) * 7  # per week
+            else:
+                upload_frequency = 0
+
+            last_upload_date = max(upload_dates) if upload_dates else None
+
+            return {
+                'upload_frequency': round(upload_frequency, 2),
+                'avg_views': avg_views,
+                'avg_engagement_rate': round(avg_engagement_rate, 2),
+                'last_upload_date': last_upload_date,
+                'total_recent_videos': video_count
+            }
+
         except Exception as e:
-            logging.debug(f"Could not fetch about section for channel {channel_id}: {str(e)}")
-        
-        return ''
-    
-    def _format_count(self, count_str):
-        """Format count numbers with commas"""
+            logging.error(f"Error getting quality metrics for channel {channel_id}: {str(e)}")
+            return None
+
+    def search_channels(self, keyword, max_results=50, filters=None):
+        """Enhanced channel search with contact enrichment and quality metrics"""
+        if not self.youtube:
+            return {'error': 'YouTube API not initialized. Please check your API key.'}
+
+        if not self.check_quota_status():
+            return {'error': 'YouTube API quota exceeded. Please wait or use backup API key.'}
+
         try:
-            count = int(count_str or '0')
-            return f"{count:,}"
-        except (ValueError, TypeError):
-            return "N/A"
+            all_results = []
+            next_page_token = None
+            results_per_page = min(max_results, 50)
+
+            while len(all_results) < max_results:
+                # Search for channels
+                search_request = self.youtube.search().list(
+                    part='snippet',
+                    q=keyword,
+                    type='channel',
+                    maxResults=results_per_page,
+                    pageToken=next_page_token
+                )
+
+                search_response = search_request.execute()
+                self.daily_quota_used += 100
+
+                channel_ids = [item['id']['channelId'] for item in search_response['items']]
+
+                if not channel_ids:
+                    break
+
+                # Get detailed channel information
+                channels_request = self.youtube.channels().list(
+                    part='snippet,statistics,brandingSettings',
+                    id=','.join(channel_ids)
+                )
+
+                channels_response = channels_request.execute()
+                self.daily_quota_used += 1
+
+                for channel in channels_response['items']:
+                    try:
+                        # Basic channel info
+                        snippet = channel['snippet']
+                        statistics = channel['statistics']
+                        branding = channel.get('brandingSettings', {})
+
+                        # Apply filters if provided
+                        subscriber_count = int(statistics.get('subscriberCount', 0))
+                        video_count = int(statistics.get('videoCount', 0))
+
+                        if filters:
+                            if filters.get('min_subscribers') and subscriber_count < filters['min_subscribers']:
+                                continue
+                            if filters.get('max_subscribers') and subscriber_count > filters['max_subscribers']:
+                                continue
+                            if filters.get('min_videos') and video_count < filters['min_videos']:
+                                continue
+                            if filters.get('max_videos') and video_count > filters['max_videos']:
+                                continue
+
+                        # Get quality metrics
+                        quality_metrics = self.get_channel_quality_metrics(channel['id'])
+
+                        # Filter by activity if specified
+                        if filters and quality_metrics:
+                            if filters.get('min_upload_frequency') and quality_metrics['upload_frequency'] < filters['min_upload_frequency']:
+                                continue
+                            if filters.get('max_days_since_upload'):
+                                if quality_metrics['last_upload_date']:
+                                    days_since = (datetime.now() - quality_metrics['last_upload_date']).days
+                                    if days_since > filters['max_days_since_upload']:
+                                        continue
+
+                        # Enhanced contact information
+                        contact_info = {
+                            'emails': [],
+                            'social_media': {},
+                            'website_contacts': {},
+                            'whois_info': {}
+                        }
+
+                        # Extract emails from description
+                        description = snippet.get('description', '')
+                        contact_info['emails'].extend(self.extract_emails_from_text(description))
+
+                        # Get website from branding settings
+                        website_url = None
+                        if 'channel' in branding and 'unsubscribedTrailer' in branding['channel']:
+                            # Try to extract website from channel art or links
+                            pass
+
+                        # Check for custom URL or website in description
+                        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                        urls = re.findall(url_pattern, description)
+
+                        for url in urls:
+                            if 'youtube.com' not in url and 'youtu.be' not in url:
+                                website_url = url
+                                break
+
+                        # Scrape website for additional contacts
+                        if website_url:
+                            try:
+                                domain = urlparse(website_url).netloc
+                                website_contacts = self.scrape_website_for_contacts(website_url)
+                                contact_info['website_contacts'] = website_contacts
+
+                                # Get WHOIS info
+                                whois_info = self.get_whois_info(domain)
+                                contact_info['whois_info'] = whois_info
+                                contact_info['emails'].extend(whois_info.get('emails', []))
+
+                            except Exception as e:
+                                logging.warning(f"Error processing website {website_url}: {str(e)}")
+
+                        # Remove duplicate emails
+                        contact_info['emails'] = list(set(contact_info['emails']))
+
+                        result = {
+                            'id': channel['id'],
+                            'title': snippet.get('title', 'N/A'),
+                            'description': description,
+                            'subscriber_count': subscriber_count,
+                            'video_count': video_count,
+                            'view_count': int(statistics.get('viewCount', 0)),
+                            'thumbnail': snippet.get('thumbnails', {}).get('default', {}).get('url', ''),
+                            'url': f"https://www.youtube.com/channel/{channel['id']}",
+                            'website_url': website_url,
+                            'contact_info': contact_info,
+                            'quality_metrics': quality_metrics or {},
+                            'created_at': snippet.get('publishedAt', ''),
+                            'country': snippet.get('country', 'Unknown'),
+                            'custom_url': snippet.get('customUrl', '')
+                        }
+
+                        all_results.append(result)
+
+                        if len(all_results) >= max_results:
+                            break
+
+                    except Exception as e:
+                        logging.error(f"Error processing channel: {str(e)}")
+                        continue
+
+                # Check for next page
+                next_page_token = search_response.get('nextPageToken')
+                if not next_page_token or len(all_results) >= max_results:
+                    break
+
+                if not self.check_quota_status():
+                    break
+
+            return {
+                'channels': all_results[:max_results],
+                'total_found': len(all_results),
+                'quota_used': self.daily_quota_used,
+                'quota_remaining': self.max_daily_quota - self.daily_quota_used
+            }
+
+        except HttpError as e:
+            if e.resp.status == 403:
+                self.quota_exceeded = True
+                error_msg = "YouTube API quota exceeded. Please wait 24 hours or use a backup API key."
+                logging.error(error_msg)
+                return {'error': error_msg}
+            else:
+                error_msg = f"YouTube API error: {str(e)}"
+                logging.error(error_msg)
+                return {'error': error_msg}
+        except Exception as e:
+            error_msg = f"Error searching channels: {str(e)}"
+            logging.error(error_msg)
+            return {'error': error_msg}
+
+    def get_quota_status(self):
+        """Get current quota status"""
+        return {
+            'quota_used': self.daily_quota_used,
+            'quota_remaining': self.max_daily_quota - self.daily_quota_used,
+            'quota_exceeded': self.quota_exceeded
+        }

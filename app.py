@@ -1,12 +1,16 @@
+
 import os
 import csv
+import json
 import io
 import logging
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, make_response, flash
+from flask import Flask, render_template, request, redirect, url_for, session, make_response, flash, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from youtube_service import YouTubeService
 from database import DatabaseService
+import openpyxl
+from openpyxl.styles import Font, PatternFill
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -20,390 +24,402 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 youtube_service = YouTubeService()
 db_service = DatabaseService()
 
-def get_intelligent_filters(keyword):
-    """Get smart filter recommendations based on keyword"""
-    keyword_lower = keyword.lower()
-    
-    # Gaming content creator tiers
-    if any(game in keyword_lower for game in ['fortnite', 'minecraft', 'gaming', 'rdr2', 'gta', 'cod', 'valorant']):
-        return {
-            'min_subscribers': '10000',  # Gaming creators need decent following
-            'min_videos': '50',          # Active content creators
-            'sort_by': 'subscribers'     # Most popular first
-        }
-    
-    # Educational/Tutorial content
-    if any(term in keyword_lower for term in ['tutorial', 'guide', 'how to', 'learn', 'education']):
-        return {
-            'min_subscribers': '5000',
-            'min_videos': '20',
-            'sort_by': 'videos'
-        }
-    
-    # Entertainment/Vlog content
-    if any(term in keyword_lower for term in ['vlog', 'daily', 'lifestyle', 'comedy', 'entertainment']):
-        return {
-            'min_subscribers': '1000',
-            'min_videos': '30',
-            'sort_by': 'recent'
-        }
-    
-    # Default for other content
-    return {
-        'min_subscribers': '1000',
-        'min_videos': '10',
-        'sort_by': 'relevance'
-    }
-
-def expand_search_keywords(keyword):
-    """Expand keywords to find similar creators"""
-    keyword_lower = keyword.lower()
-    
-    # Gaming expansions
-    gaming_expansions = {
-        'fortnite': ['fortnite gaming', 'fortnite battle royale', 'fortnite creative'],
-        'minecraft': ['minecraft gaming', 'minecraft survival', 'minecraft builds', 'minecraft mods'],
-        'rdr2': ['red dead redemption', 'rdr2 gaming', 'western gaming'],
-        'hindi gaming': ['indian gaming', 'hindi gameplay', 'indian streamers'],
-        'english gaming': ['gaming commentary', 'english gameplay', 'gaming reviews']
-    }
-    
-    for base_term, expansions in gaming_expansions.items():
-        if base_term in keyword_lower:
-            return expansions
-    
-    return [keyword]
-
-def apply_enhanced_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by):
-    """Apply enhanced filtering and sorting to channel results"""
-    filtered_channels = []
-    
-    for channel in channels:
-        # Convert string numbers to integers for comparison
-        try:
-            subscriber_count = int(channel.get('subscriber_count', '0').replace(',', ''))
-            video_count = int(channel.get('video_count', '0').replace(',', ''))
-            view_count = int(channel.get('view_count', '0').replace(',', ''))
-        except (ValueError, AttributeError):
-            subscriber_count = 0
-            video_count = 0
-            view_count = 0
-        
-        # Store numeric values for easier processing
-        channel['subscriber_count_num'] = subscriber_count
-        channel['video_count_num'] = video_count
-        channel['view_count_num'] = view_count
-        
-        # Calculate advanced engagement metrics
-        try:
-            if subscriber_count > 0:
-                views_per_subscriber = view_count / subscriber_count
-                videos_per_year = video_count / max(1, ((2024 - int(channel.get('published_at', '2020')[:4])) or 1))
-                engagement_score = (views_per_subscriber * 0.7) + (videos_per_year * 0.3)
-            else:
-                views_per_subscriber = 0
-                videos_per_year = 0
-                engagement_score = 0
-                
-            channel['views_per_subscriber'] = views_per_subscriber
-            channel['videos_per_year'] = videos_per_year
-            channel['engagement_score'] = engagement_score
-        except:
-            channel['views_per_subscriber'] = 0
-            channel['videos_per_year'] = 0
-            channel['engagement_score'] = 0
-        
-        # Apply subscriber filters with better handling
-        if min_subscribers:
-            try:
-                min_sub_value = int(min_subscribers)
-                if subscriber_count < min_sub_value:
-                    continue
-            except ValueError:
-                pass
-                
-        if max_subscribers:
-            try:
-                max_sub_value = int(max_subscribers)
-                if subscriber_count > max_sub_value:
-                    continue
-            except ValueError:
-                pass
-            
-        # Apply video count filter
-        if min_videos:
-            try:
-                min_video_value = int(min_videos)
-                if video_count < min_video_value:
-                    continue
-            except ValueError:
-                pass
-        
-        # Quality filters - exclude channels with suspicious metrics
-        if subscriber_count > 0 and video_count > 0:
-            # Skip channels with unusually low engagement (potential inactive channels)
-            if views_per_subscriber < 0.1 and subscriber_count > 1000:
-                continue
-                
-        filtered_channels.append(channel)
-    
-    # Enhanced sorting options
-    if sort_by == 'subscribers':
-        filtered_channels.sort(key=lambda x: x.get('subscriber_count_num', 0), reverse=True)
-    elif sort_by == 'videos':
-        filtered_channels.sort(key=lambda x: x.get('video_count_num', 0), reverse=True)
-    elif sort_by == 'engagement':
-        filtered_channels.sort(key=lambda x: x.get('engagement_score', 0), reverse=True)
-    elif sort_by == 'recent':
-        filtered_channels.sort(key=lambda x: x.get('published_at', ''), reverse=True)
-    elif sort_by == 'email_first':
-        # Sort by email availability first, then by subscribers
-        filtered_channels.sort(key=lambda x: (
-            bool(x.get('email')),
-            x.get('subscriber_count_num', 0)
-        ), reverse=True)
-    else:  # relevance or default
-        # Sort by a combination of factors for relevance
-        filtered_channels.sort(key=lambda x: (
-            bool(x.get('email')) * 1000000,  # Prioritize channels with email
-            x.get('engagement_score', 0) * 1000,
-            x.get('subscriber_count_num', 0)
-        ), reverse=True)
-    
-    return filtered_channels
-
-# Keep the old function for backward compatibility
-def apply_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by):
-    """Legacy filter function - redirects to enhanced version"""
-    return apply_enhanced_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by)
-
 @app.route('/')
 def index():
-    """Home page with search form"""
-    return render_template('index.html')
+    """Homepage with enhanced search form"""
+    quota_status = youtube_service.get_quota_status()
+    return render_template('index.html', quota_status=quota_status)
 
 @app.route('/search', methods=['POST'])
 def search():
-    """Handle YouTube channel search with enhanced volume and filtering"""
+    """Enhanced search with advanced filtering"""
     keyword = request.form.get('keyword', '').strip()
     
     if not keyword:
-        flash('Please enter a search keyword.', 'warning')
+        flash('Please enter a search keyword', 'warning')
         return redirect(url_for('index'))
     
     # Get filter parameters
-    min_subscribers = request.form.get('min_subscribers', '')
-    max_subscribers = request.form.get('max_subscribers', '')
-    min_videos = request.form.get('min_videos', '')
-    sort_by = request.form.get('sort_by', 'relevance')
+    filters = {}
     
-    # Get target results (default to 50 for high volume)
-    target_results = int(request.form.get('target_results', '50'))
+    # Subscriber filters
+    min_subs = request.form.get('min_subscribers')
+    max_subs = request.form.get('max_subscribers')
+    if min_subs:
+        try:
+            filters['min_subscribers'] = int(min_subs)
+        except ValueError:
+            pass
+    if max_subs:
+        try:
+            filters['max_subscribers'] = int(max_subs)
+        except ValueError:
+            pass
+    
+    # Video count filters
+    min_videos = request.form.get('min_videos')
+    max_videos = request.form.get('max_videos')
+    if min_videos:
+        try:
+            filters['min_videos'] = int(min_videos)
+        except ValueError:
+            pass
+    if max_videos:
+        try:
+            filters['max_videos'] = int(max_videos)
+        except ValueError:
+            pass
+    
+    # Activity filters
+    min_upload_freq = request.form.get('min_upload_frequency')
+    max_days_since = request.form.get('max_days_since_upload')
+    if min_upload_freq:
+        try:
+            filters['min_upload_frequency'] = float(min_upload_freq)
+        except ValueError:
+            pass
+    if max_days_since:
+        try:
+            filters['max_days_since_upload'] = int(max_days_since)
+        except ValueError:
+            pass
+    
+    # Get max results
+    max_results = request.form.get('max_results', 50)
+    try:
+        max_results = min(int(max_results), 200)  # Cap at 200
+    except ValueError:
+        max_results = 50
+    
+    app.logger.info(f"Searching for keyword: {keyword} with filters: {filters}")
     
     try:
-        # Check if YouTube service is properly initialized
-        if not youtube_service.youtube:
-            app.logger.error("YouTube service not initialized")
-            flash('YouTube API service not available. Please check API configuration.', 'danger')
+        result = youtube_service.search_channels(keyword, max_results=max_results, filters=filters)
+        
+        if 'error' in result:
+            flash(f'Search error: {result["error"]}', 'danger')
             return redirect(url_for('index'))
         
-        # Always fetch fresh results for better volume and accuracy
-        app.logger.info(f"Starting enhanced search for '{keyword}' targeting {target_results} results")
-        
-        # Use enhanced search with higher target
-        channels = youtube_service.search_channels(keyword, max_results=target_results * 2)  # Search for more than needed
-        
-        app.logger.info(f"Raw search returned {len(channels)} channels")
-        
-        # Apply filters BEFORE limiting results
-        if channels:
-            original_count = len(channels)
-            
-            # Apply filters with enhanced logic
-            channels = apply_enhanced_filters(channels, min_subscribers, max_subscribers, min_videos, sort_by)
-            
-            app.logger.info(f"After filtering: {len(channels)} channels remaining from {original_count}")
-            
-            # Limit to target results after filtering
-            channels = channels[:target_results]
-        
-        # Store search in history
-        if 'search_history' not in session:
-            session['search_history'] = []
-        
-        search_entry = {
-            'keyword': keyword,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'results_count': len(channels),
-            'filters_applied': {
-                'min_subscribers': min_subscribers,
-                'max_subscribers': max_subscribers,
-                'min_videos': min_videos,
-                'sort_by': sort_by
-            }
-        }
-        
-        session['search_history'].insert(0, search_entry)
-        session['search_history'] = session['search_history'][:50]
-        session.modified = True
-        
-        # Save to database if connected
-        if db_service.is_connected():
-            session_id = session.get('session_id', str(id(session)))
-            db_service.save_search_history(keyword, len(channels), session_id)
+        channels = result['channels']
+        quota_status = result
         
         if not channels:
-            flash(f'No channels found matching your criteria for keyword: {keyword}', 'info')
+            flash('No channels found matching your criteria. Try adjusting your filters.', 'info')
             return redirect(url_for('index'))
         
-        # Add pagination info
-        pagination_info = {
-            'total_results': len(channels),
-            'has_email': len([ch for ch in channels if ch.get('email')]),
-            'filters_applied': bool(min_subscribers or max_subscribers or min_videos or sort_by != 'relevance')
-        }
+        # Store in session
+        session['search_keyword'] = keyword
+        session['search_results'] = channels
+        session['search_filters'] = filters
+        session['quota_status'] = quota_status
         
-        return render_template('results.html', 
-                             channels=channels, 
-                             keyword=keyword, 
-                             pagination=pagination_info)
+        # Store in database if available
+        if db_service.is_connected():
+            db_service.save_search_history(keyword, len(channels), filters)
+            for channel in channels:
+                db_service.save_channel_data(channel)
+        
+        flash(f'Found {len(channels)} channels for "{keyword}"', 'success')
+        return redirect(url_for('results'))
         
     except Exception as e:
         app.logger.error(f"Search error for keyword '{keyword}': {str(e)}")
-        flash(f'Error searching for channels: {str(e)}', 'danger')
+        flash(f'Search failed: {str(e)}', 'danger')
         return redirect(url_for('index'))
+
+@app.route('/results')
+def results():
+    """Display search results with enhanced data"""
+    channels = session.get('search_results', [])
+    keyword = session.get('search_keyword', '')
+    filters = session.get('search_filters', {})
+    quota_status = session.get('quota_status', {})
+    
+    if not channels:
+        flash('No search results found. Please perform a search first.', 'warning')
+        return redirect(url_for('index'))
+    
+    return render_template('results.html', 
+                         channels=channels, 
+                         keyword=keyword, 
+                         filters=filters,
+                         quota_status=quota_status,
+                         total_results=len(channels))
+
+@app.route('/export/<format>')
+def export_data(format):
+    """Export search results in multiple formats"""
+    channels = session.get('search_results', [])
+    keyword = session.get('search_keyword', 'search')
+    
+    if not channels:
+        flash('No data to export. Please perform a search first.', 'warning')
+        return redirect(url_for('index'))
+    
+    try:
+        if format.lower() == 'csv':
+            return export_csv(channels, keyword)
+        elif format.lower() == 'excel':
+            return export_excel(channels, keyword)
+        elif format.lower() == 'json':
+            return export_json(channels, keyword)
+        else:
+            flash('Invalid export format', 'danger')
+            return redirect(url_for('results'))
+            
+    except Exception as e:
+        app.logger.error(f"Export error for format '{format}': {str(e)}")
+        flash(f'Error exporting data: {str(e)}', 'danger')
+        return redirect(url_for('results'))
+
+def export_csv(channels, keyword):
+    """Export to CSV format"""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Enhanced headers
+    headers = [
+        'Channel Name', 'URL', 'Subscribers', 'Video Count', 'Total Views',
+        'Upload Frequency (per week)', 'Avg Views per Video', 'Avg Engagement Rate (%)',
+        'Last Upload Date', 'Days Since Last Upload', 'Description', 'Country',
+        'Website URL', 'Emails Found', 'Social Media', 'Contact Pages',
+        'WHOIS Emails', 'Channel Age (days)', 'Custom URL'
+    ]
+    writer.writerow(headers)
+    
+    for channel in channels:
+        quality = channel.get('quality_metrics', {})
+        contact = channel.get('contact_info', {})
+        
+        # Calculate days since last upload
+        days_since_upload = 'N/A'
+        if quality.get('last_upload_date'):
+            try:
+                last_upload = quality['last_upload_date']
+                if isinstance(last_upload, str):
+                    last_upload = datetime.strptime(last_upload[:10], '%Y-%m-%d')
+                days_since_upload = (datetime.now() - last_upload).days
+            except:
+                pass
+        
+        # Calculate channel age
+        channel_age = 'N/A'
+        if channel.get('created_at'):
+            try:
+                created_date = datetime.strptime(channel['created_at'][:10], '%Y-%m-%d')
+                channel_age = (datetime.now() - created_date).days
+            except:
+                pass
+        
+        # Format social media links
+        social_media = ', '.join([f"{platform}: {handle}" for platform, handle in contact.get('social_media', {}).items()])
+        
+        # Combine all emails
+        all_emails = contact.get('emails', [])
+        if contact.get('whois_info', {}).get('emails'):
+            all_emails.extend(contact['whois_info']['emails'])
+        all_emails = ', '.join(list(set(all_emails)))
+        
+        # Contact pages
+        contact_pages = ', '.join(contact.get('website_contacts', {}).get('contact_pages', []))
+        
+        # WHOIS emails
+        whois_emails = ', '.join(contact.get('whois_info', {}).get('emails', []))
+        
+        row = [
+            channel.get('title', 'N/A'),
+            channel.get('url', ''),
+            channel.get('subscriber_count', 0),
+            channel.get('video_count', 0),
+            channel.get('view_count', 0),
+            quality.get('upload_frequency', 'N/A'),
+            quality.get('avg_views', 'N/A'),
+            quality.get('avg_engagement_rate', 'N/A'),
+            quality.get('last_upload_date', 'N/A'),
+            days_since_upload,
+            channel.get('description', '')[:200],  # Truncate description
+            channel.get('country', 'Unknown'),
+            channel.get('website_url', ''),
+            all_emails,
+            social_media,
+            contact_pages,
+            whois_emails,
+            channel_age,
+            channel.get('custom_url', '')
+        ]
+        writer.writerow(row)
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename=youtube_channels_{keyword.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    
+    return response
+
+def export_excel(channels, keyword):
+    """Export to Excel format with formatting"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "YouTube Channels"
+    
+    # Headers with formatting
+    headers = [
+        'Channel Name', 'URL', 'Subscribers', 'Video Count', 'Total Views',
+        'Upload Frequency (per week)', 'Avg Views per Video', 'Avg Engagement Rate (%)',
+        'Last Upload Date', 'Days Since Last Upload', 'Description', 'Country',
+        'Website URL', 'Emails Found', 'Social Media', 'Contact Pages',
+        'WHOIS Emails', 'Channel Age (days)', 'Custom URL'
+    ]
+    
+    # Style headers
+    header_font = Font(bold=True)
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+    
+    # Add data
+    for row_idx, channel in enumerate(channels, 2):
+        quality = channel.get('quality_metrics', {})
+        contact = channel.get('contact_info', {})
+        
+        # Calculate metrics
+        days_since_upload = 'N/A'
+        if quality.get('last_upload_date'):
+            try:
+                last_upload = quality['last_upload_date']
+                if isinstance(last_upload, str):
+                    last_upload = datetime.strptime(last_upload[:10], '%Y-%m-%d')
+                days_since_upload = (datetime.now() - last_upload).days
+            except:
+                pass
+        
+        channel_age = 'N/A'
+        if channel.get('created_at'):
+            try:
+                created_date = datetime.strptime(channel['created_at'][:10], '%Y-%m-%d')
+                channel_age = (datetime.now() - created_date).days
+            except:
+                pass
+        
+        # Format data
+        social_media = ', '.join([f"{platform}: {handle}" for platform, handle in contact.get('social_media', {}).items()])
+        all_emails = contact.get('emails', [])
+        if contact.get('whois_info', {}).get('emails'):
+            all_emails.extend(contact['whois_info']['emails'])
+        all_emails = ', '.join(list(set(all_emails)))
+        contact_pages = ', '.join(contact.get('website_contacts', {}).get('contact_pages', []))
+        whois_emails = ', '.join(contact.get('whois_info', {}).get('emails', []))
+        
+        data = [
+            channel.get('title', 'N/A'),
+            channel.get('url', ''),
+            channel.get('subscriber_count', 0),
+            channel.get('video_count', 0),
+            channel.get('view_count', 0),
+            quality.get('upload_frequency', 'N/A'),
+            quality.get('avg_views', 'N/A'),
+            quality.get('avg_engagement_rate', 'N/A'),
+            quality.get('last_upload_date', 'N/A'),
+            days_since_upload,
+            channel.get('description', '')[:200],
+            channel.get('country', 'Unknown'),
+            channel.get('website_url', ''),
+            all_emails,
+            social_media,
+            contact_pages,
+            whois_emails,
+            channel_age,
+            channel.get('custom_url', '')
+        ]
+        
+        for col, value in enumerate(data, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+    
+    # Adjust column widths
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column].width = adjusted_width
+    
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    response.headers['Content-Disposition'] = f'attachment; filename=youtube_channels_{keyword.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    
+    return response
+
+def export_json(channels, keyword):
+    """Export to JSON format"""
+    # Add export timestamp and metadata
+    export_data = {
+        'export_info': {
+            'keyword': keyword,
+            'export_date': datetime.now().isoformat(),
+            'total_channels': len(channels),
+            'format': 'json'
+        },
+        'channels': channels
+    }
+    
+    response = make_response(json.dumps(export_data, indent=2, default=str))
+    response.headers['Content-Type'] = 'application/json'
+    response.headers['Content-Disposition'] = f'attachment; filename=youtube_channels_{keyword.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+    
+    return response
 
 @app.route('/history')
 def history():
-    """Display search history"""
-    # Get history from database if available, otherwise use session
-    search_history = []
-    
+    """View search history"""
     if db_service.is_connected():
-        session_id = session.get('session_id', str(id(session)))
-        search_history = db_service.get_search_history(session_id)
-    
-    # Fallback to session history if database not available
-    if not search_history:
-        search_history = session.get('search_history', [])
-    
-    return render_template('history.html', search_history=search_history)
-
-@app.route('/clear_history')
-def clear_history():
-    """Clear search history"""
-    # Clear from database if connected
-    if db_service.is_connected():
-        session_id = session.get('session_id', str(id(session)))
-        db_service.clear_search_history(session_id)
-    
-    # Clear session history
-    session.pop('search_history', None)
-    flash('Search history cleared successfully.', 'success')
-    return redirect(url_for('history'))
-
-@app.route('/test_api')
-def test_api():
-    """Test YouTube API connectivity"""
-    try:
-        # Test if API key is set
-        api_key = os.environ.get('GOOGLE_API_KEY')
-        if not api_key:
-            return f"❌ GOOGLE_API_KEY not found in environment variables"
-        
-        # Test if service is initialized
-        if not youtube_service.youtube:
-            return f"❌ YouTube service not initialized. API Key present: {bool(api_key)}"
-        
-        # Test with a simple search
-        test_channels = youtube_service.search_channels("test", max_results=1)
-        
-        return f"✅ API working! Test returned {len(test_channels)} channels. API Key: {api_key[:10]}..."
-        
-    except Exception as e:
-        app.logger.error(f"API test failed: {str(e)}")
-        return f"❌ API test failed: {str(e)}"
+        search_history = db_service.get_search_history()
+        return render_template('history.html', history=search_history, db_connected=True)
+    else:
+        # Use session-based history as fallback
+        session_history = session.get('search_history', [])
+        return render_template('history.html', history=session_history, db_connected=False)
 
 @app.route('/stats')
 def stats():
-    """Display database statistics"""
+    """Database statistics and analytics"""
     if not db_service.is_connected():
-        flash('Database not connected. Statistics not available.', 'warning')
+        flash('Database not available. Statistics require MongoDB connection.', 'warning')
         return redirect(url_for('index'))
     
     try:
-        db_stats = db_service.get_database_stats()
-        popular_keywords = db_service.get_popular_keywords(10)
-        
-        return render_template('stats.html', 
-                             db_stats=db_stats, 
-                             popular_keywords=popular_keywords)
+        stats_data = db_service.get_database_stats()
+        return render_template('stats.html', stats=stats_data)
     except Exception as e:
-        app.logger.error(f"Error getting database statistics: {str(e)}")
-        flash('Error retrieving database statistics.', 'danger')
+        app.logger.error(f"Error loading stats: {str(e)}")
+        flash('Error loading statistics', 'danger')
         return redirect(url_for('index'))
 
-@app.route('/export_csv')
-def export_csv():
-    """Export last search results to CSV"""
-    keyword = request.args.get('keyword', '')
-    
-    if not keyword:
-        flash('No search results to export.', 'warning')
-        return redirect(url_for('index'))
-    
-    try:
-        # Re-fetch the channels for export
-        channels = youtube_service.search_channels(keyword)
-        
-        if not channels:
-            flash('No channels found to export.', 'warning')
-            return redirect(url_for('index'))
-        
-        # Create CSV in memory
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Write header with email field
-        writer.writerow(['Channel Name', 'Channel ID', 'Subscriber Count', 'Video Count', 'Email', 'Description', 'Published Date', 'Country'])
-        
-        # Write channel data including email
-        for channel in channels:
-            writer.writerow([
-                channel['title'],
-                channel['channel_id'],
-                channel['subscriber_count'],
-                channel['video_count'],
-                channel.get('email', 'Not found'),
-                channel['description'][:100] + '...' if len(channel['description']) > 100 else channel['description'],
-                channel['published_at'],
-                channel.get('country', 'N/A')
-            ])
-        
-        # Create response
-        output.seek(0)
-        response = make_response(output.getvalue())
-        response.headers['Content-Type'] = 'text/csv'
-        response.headers['Content-Disposition'] = f'attachment; filename=youtube_channels_{keyword.replace(" ", "_")}.csv'
-        
-        return response
-        
-    except Exception as e:
-        app.logger.error(f"Export error for keyword '{keyword}': {str(e)}")
-        flash(f'Error exporting data: {str(e)}', 'danger')
-        return redirect(url_for('index'))
+@app.route('/api/quota-status')
+def api_quota_status():
+    """API endpoint for quota status"""
+    return jsonify(youtube_service.get_quota_status())
 
-@app.errorhandler(404)
-def not_found_error(error):
-    """Handle 404 errors"""
-    return render_template('index.html'), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors"""
-    app.logger.error(f"Internal server error: {str(error)}")
-    flash('An internal error occurred. Please try again.', 'danger')
-    return render_template('index.html'), 500
+@app.route('/clear-results')
+def clear_results():
+    """Clear current search results"""
+    session.pop('search_results', None)
+    session.pop('search_keyword', None)
+    session.pop('search_filters', None)
+    session.pop('quota_status', None)
+    flash('Search results cleared', 'info')
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
