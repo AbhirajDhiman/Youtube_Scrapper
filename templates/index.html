@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Search YouTube Channels{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Hero Section -->
+            <div class="text-center mb-5">
+                <i class="fab fa-youtube display-1 text-danger mb-3"></i>
+                <h1 class="display-4 mb-3">Discover YouTube Channels</h1>
+                <p class="lead text-muted">
+                    Search for YouTube channels by keyword and export your results
+                </p>
+            </div>
+
+            <!-- Search Form -->
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('search') }}" class="needs-validation" novalidate>
+                        <div class="mb-4">
+                            <label for="keyword" class="form-label">
+                                <i class="fas fa-search me-2"></i>Search Keyword
+                            </label>
+                            <input 
+                                type="text" 
+                                class="form-control form-control-lg" 
+                                id="keyword" 
+                                name="keyword" 
+                                placeholder="e.g., Fortnite, Minecraft, Hindi Gaming..."
+                                required
+                                autocomplete="off"
+                            >
+                            <div class="invalid-feedback">
+                                Please enter a search keyword.
+                            </div>
+                            
+                            <!-- Quick Suggestions -->
+                            <div class="mt-2">
+                                <small class="text-muted">Quick suggestions:</small><br>
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary suggestion-btn" data-keyword="Fortnite">Fortnite</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary suggestion-btn" data-keyword="Minecraft">Minecraft</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary suggestion-btn" data-keyword="Hindi Gaming">Hindi Gaming</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary suggestion-btn" data-keyword="English Gaming">English Gaming</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary suggestion-btn" data-keyword="RDR2">RDR2</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary suggestion-btn" data-keyword="Tech Reviews">Tech Reviews</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Filters -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-filter me-2"></i>Advanced Filters
+                                    <button class="btn btn-sm btn-outline-secondary float-end" type="button" 
+                                            data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                </h6>
+                            </div>
+                            <div class="collapse" id="advancedFilters">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="min_subscribers" class="form-label">Minimum Subscribers</label>
+                                            <select class="form-select" name="min_subscribers" id="min_subscribers">
+                                                <option value="">Any</option>
+                                                <option value="100">100+</option>
+                                                <option value="1000">1,000+</option>
+                                                <option value="10000">10,000+</option>
+                                                <option value="100000">100,000+</option>
+                                                <option value="1000000">1,000,000+</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="max_subscribers" class="form-label">Maximum Subscribers</label>
+                                            <select class="form-select" name="max_subscribers" id="max_subscribers">
+                                                <option value="">Any</option>
+                                                <option value="1000">Under 1,000</option>
+                                                <option value="10000">Under 10,000</option>
+                                                <option value="100000">Under 100,000</option>
+                                                <option value="1000000">Under 1,000,000</option>
+                                                <option value="10000000">Under 10,000,000</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="min_videos" class="form-label">Minimum Videos</label>
+                                            <select class="form-select" name="min_videos" id="min_videos">
+                                                <option value="">Any</option>
+                                                <option value="10">10+</option>
+                                                <option value="50">50+</option>
+                                                <option value="100">100+</option>
+                                                <option value="500">500+</option>
+                                                <option value="1000">1,000+</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="sort_by" class="form-label">Sort By</label>
+                                            <select class="form-select" name="sort_by" id="sort_by">
+                                                <option value="relevance">Relevance</option>
+                                                <option value="subscribers">Subscriber Count</option>
+                                                <option value="videos">Video Count</option>
+                                                <option value="engagement">Engagement Rate</option>
+                                                <option value="recent">Most Recent</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-12">
+                                            <div class="alert alert-info">
+                                                <i class="fas fa-lightbulb me-2"></i>
+                                                <strong>Smart Discovery:</strong> Leave filters empty for intelligent auto-filtering based on your keyword type!
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-search me-2"></i>
+                                Search Channels
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Features Section -->
+            <div class="row mt-5">
+                <div class="col-md-4 mb-3">
+                    <div class="text-center">
+                        <i class="fas fa-search fa-3x text-primary mb-3"></i>
+                        <h5>Smart Search</h5>
+                        <p class="text-muted">Find channels by keyword with YouTube's powerful search</p>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <div class="text-center">
+                        <i class="fas fa-download fa-3x text-success mb-3"></i>
+                        <h5>CSV Export</h5>
+                        <p class="text-muted">Export your search results to CSV for further analysis</p>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <div class="text-center">
+                        <i class="fas fa-history fa-3x text-info mb-3"></i>
+                        <h5>Search History</h5>
+                        <p class="text-muted">Track your searches and easily revisit previous results</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="card mt-5">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Getting Started
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0">
+                        <li class="mb-2">Enter a keyword related to the type of channels you want to discover</li>
+                        <li class="mb-2">Click "Search Channels" to find relevant YouTube channels</li>
+                        <li class="mb-2">Browse the results table with sorting and filtering options</li>
+                        <li class="mb-2">Export your results to CSV for offline analysis</li>
+                        <li>View your search history to track your discoveries</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- API Key Notice -->
+            <div class="alert alert-info mt-4" role="alert">
+                <i class="fas fa-key me-2"></i>
+                <strong>API Key Required:</strong> This application requires a YouTube Data API v3 key. 
+                Make sure to set the <code>GOOGLE_API_KEY</code> environment variable.
+            </div>
+
+            <!-- Database Status Notice -->
+            <div class="alert alert-secondary mt-2" role="alert">
+                <i class="fas fa-database me-2"></i>
+                <strong>Database:</strong> MongoDB integration available for persistent storage and analytics. 
+                Set <code>MONGODB_URI</code> environment variable to connect.
+                <a href="{{ url_for('stats') }}" class="btn btn-sm btn-outline-primary ms-2">
+                    <i class="fas fa-chart-bar me-1"></i>View Stats
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Form validation
+    (function() {
+        'use strict';
+        window.addEventListener('load', function() {
+            var forms = document.getElementsByClassName('needs-validation');
+            var validation = Array.prototype.filter.call(forms, function(form) {
+                form.addEventListener('submit', function(event) {
+                    if (form.checkValidity() === false) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                    form.classList.add('was-validated');
+                }, false);
+            });
+        }, false);
+    })();
+</script>
+{% endblock %}
