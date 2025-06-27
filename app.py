@@ -201,6 +201,12 @@ def search():
     target_results = int(request.form.get('target_results', '50'))
     
     try:
+        # Check if YouTube service is properly initialized
+        if not youtube_service.youtube:
+            app.logger.error("YouTube service not initialized")
+            flash('YouTube API service not available. Please check API configuration.', 'danger')
+            return redirect(url_for('index'))
+        
         # Always fetch fresh results for better volume and accuracy
         app.logger.info(f"Starting enhanced search for '{keyword}' targeting {target_results} results")
         
@@ -295,6 +301,28 @@ def clear_history():
     session.pop('search_history', None)
     flash('Search history cleared successfully.', 'success')
     return redirect(url_for('history'))
+
+@app.route('/test_api')
+def test_api():
+    """Test YouTube API connectivity"""
+    try:
+        # Test if API key is set
+        api_key = os.environ.get('GOOGLE_API_KEY')
+        if not api_key:
+            return f"❌ GOOGLE_API_KEY not found in environment variables"
+        
+        # Test if service is initialized
+        if not youtube_service.youtube:
+            return f"❌ YouTube service not initialized. API Key present: {bool(api_key)}"
+        
+        # Test with a simple search
+        test_channels = youtube_service.search_channels("test", max_results=1)
+        
+        return f"✅ API working! Test returned {len(test_channels)} channels. API Key: {api_key[:10]}..."
+        
+    except Exception as e:
+        app.logger.error(f"API test failed: {str(e)}")
+        return f"❌ API test failed: {str(e)}"
 
 @app.route('/stats')
 def stats():

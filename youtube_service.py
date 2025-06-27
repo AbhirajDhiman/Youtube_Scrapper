@@ -23,9 +23,29 @@ class YouTubeService:
             try:
                 self.youtube = build('youtube', 'v3', developerKey=self.api_key)
                 logging.info("YouTube API service initialized successfully")
+                # Test the API key with a simple call
+                self._validate_api_key()
             except Exception as e:
                 logging.error(f"Failed to initialize YouTube API service: {str(e)}")
                 self.youtube = None
+    
+    def _validate_api_key(self):
+        """Validate API key with a simple test call"""
+        try:
+            test_response = self.youtube.search().list(
+                q="test",
+                part='snippet',
+                type='channel',
+                maxResults=1
+            ).execute()
+            logging.info("API key validation successful")
+            return True
+        except HttpError as e:
+            logging.error(f"API key validation failed: {e.resp.status} - {e.content.decode()}")
+            return False
+        except Exception as e:
+            logging.error(f"API key validation error: {str(e)}")
+            return False
     
     def search_channels(self, keyword, max_results=50):
         """
@@ -38,8 +58,15 @@ class YouTubeService:
         Returns:
             list: List of channel data dictionaries with comprehensive email extraction
         """
+        if not self.api_key:
+            logging.error("Google API key not found in environment variables")
+            raise Exception("Google API key not found. Please set GOOGLE_API_KEY environment variable.")
+        
         if not self.youtube:
+            logging.error("YouTube API service not initialized")
             raise Exception("YouTube API service not available. Please check your API key.")
+        
+        logging.info(f"Starting search for keyword: '{keyword}' with max_results: {max_results}")
         
         all_channels = []
         unique_channel_ids = set()
@@ -61,15 +88,20 @@ class YouTubeService:
         
         try:
             # Phase 1: Direct channel searches with different ordering
-            for strategy in search_strategies:
+            for i, strategy in enumerate(search_strategies):
                 if len(all_channels) >= max_results:
                     break
-                    
+                
+                logging.info(f"Trying search strategy {i+1}/{len(search_strategies)}: {strategy}")
                 channels = self._search_with_strategy(keyword, strategy, max_results=50)
+                logging.info(f"Strategy {i+1} returned {len(channels)} channels")
+                
                 for channel in channels:
                     if channel['channel_id'] not in unique_channel_ids:
                         all_channels.append(channel)
                         unique_channel_ids.add(channel['channel_id'])
+                
+                logging.info(f"Total unique channels so far: {len(all_channels)}")
                 
                 # Small delay to avoid rate limiting
                 time.sleep(0.1)
@@ -118,19 +150,30 @@ class YouTubeService:
             return all_channels[:max_results]  # Return up to max_results
             
         except HttpError as e:
-            error_message = f"YouTube API error: {e.resp.status} - {e.content.decode()}"
+            error_content = e.content.decode() if e.content else "No error details"
+            error_message = f"YouTube API error: {e.resp.status} - {error_content}"
             logging.error(error_message)
             
             if e.resp.status == 403:
-                raise Exception("YouTube API quota exceeded or invalid API key. Please check your API key and quota.")
+                if "quotaExceeded" in error_content or "dailyLimitExceeded" in error_content:
+                    raise Exception("YouTube API quota exceeded. Please try again tomorrow or check your quota limits.")
+                elif "keyInvalid" in error_content:
+                    raise Exception("Invalid YouTube API key. Please check your GOOGLE_API_KEY environment variable.")
+                else:
+                    raise Exception("YouTube API access forbidden. Please check your API key permissions.")
             elif e.resp.status == 400:
-                raise Exception("Invalid search parameters. Please try a different keyword.")
+                raise Exception(f"Invalid search parameters for keyword '{keyword}'. Error: {error_content}")
+            elif e.resp.status == 404:
+                raise Exception("YouTube API endpoint not found. Please check your API configuration.")
             else:
-                raise Exception(f"YouTube API error: {e.resp.status}")
+                raise Exception(f"YouTube API error {e.resp.status}: {error_content}")
                 
         except Exception as e:
             logging.error(f"Unexpected error in search_channels: {str(e)}")
-            raise Exception(f"Failed to search channels: {str(e)}")
+            if "API" not in str(e):
+                raise Exception(f"Network or connection error: {str(e)}")
+            else:
+                raise
     
     def _search_with_strategy(self, keyword, strategy, max_results=50):
         """Search channels with a specific strategy"""
@@ -143,6 +186,8 @@ class YouTubeService:
                 # Calculate how many more results we need
                 remaining_results = min(results_per_page, max_results - len(channels))
                 
+                logging.debug(f"Making API call with strategy {strategy}, remaining_results: {remaining_results}")
+                
                 search_response = self.youtube.search().list(
                     q=keyword,
                     part='snippet',
@@ -151,6 +196,8 @@ class YouTubeService:
                     order=strategy['order'],
                     pageToken=next_page_token
                 ).execute()
+                
+                logging.debug(f"API response: {len(search_response.get('items', []))} items returned")
                 
                 if strategy['type'] == 'channel':
                     channel_ids = [item['snippet']['channelId'] for item in search_response.get('items', [])]
