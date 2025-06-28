@@ -1,9 +1,12 @@
 import os
 import logging
 from datetime import datetime
-from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo import MongoClient, DESCENDING
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
-import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class DatabaseService:
     def __init__(self):

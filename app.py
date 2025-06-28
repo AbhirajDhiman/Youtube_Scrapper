@@ -11,6 +11,10 @@ from youtube_service import YouTubeService
 from database import DatabaseService
 import openpyxl
 from openpyxl.styles import Font, PatternFill
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,40 +32,100 @@ db_service = DatabaseService()
 def index():
     """Homepage with enhanced search form"""
     try:
-        quota_status = youtube_service.get_quota_status()
-        # Ensure all required keys are present with proper structure
-        required_keys = ['quota_used', 'quota_limit', 'quota_remaining', 'quota_percentage', 'status']
-        for key in required_keys:
-            if key not in quota_status:
-                if key == 'quota_used':
-                    quota_status[key] = 0
-                elif key == 'quota_limit':
-                    quota_status[key] = 10000
-                elif key == 'quota_remaining':
-                    quota_status[key] = 10000
-                elif key == 'quota_percentage':
-                    quota_status[key] = 0
-                else:
-                    quota_status[key] = 'healthy'
+        # Check if API service is available with better error handling
+        if not youtube_service.api_key:
+            quota_status = {
+                'quota_used': 0, 
+                'quota_limit': 10000, 
+                'quota_remaining': 0, 
+                'quota_percentage': 0, 
+                'status': 'error',
+                'quota_exceeded': True,
+                'error_message': 'API key not configured. Please set GOOGLE_API_KEY environment variable.'
+            }
+            app.logger.warning("YouTube API key not found in environment variables")
+        elif not youtube_service.youtube:
+            quota_status = {
+                'quota_used': 0, 
+                'quota_limit': 10000, 
+                'quota_remaining': 0, 
+                'quota_percentage': 0, 
+                'status': 'error',
+                'quota_exceeded': True,
+                'error_message': 'API service initialization failed. Check API key validity.'
+            }
+            app.logger.error("YouTube API service not initialized")
+        else:
+            try:
+                quota_status = youtube_service.get_quota_status()
+                # Ensure all required keys are present with proper structure
+                required_keys = ['quota_used', 'quota_limit', 'quota_remaining', 'quota_percentage', 'status']
+                for key in required_keys:
+                    if key not in quota_status:
+                        if key == 'quota_used':
+                            quota_status[key] = getattr(youtube_service, 'daily_quota_used', 0)
+                        elif key == 'quota_limit':
+                            quota_status[key] = getattr(youtube_service, 'max_daily_quota', 10000)
+                        elif key == 'quota_remaining':
+                            used = getattr(youtube_service, 'daily_quota_used', 0)
+                            limit = getattr(youtube_service, 'max_daily_quota', 10000)
+                            quota_status[key] = max(0, limit - used)
+                        elif key == 'quota_percentage':
+                            used = getattr(youtube_service, 'daily_quota_used', 0)
+                            limit = getattr(youtube_service, 'max_daily_quota', 10000)
+                            quota_status[key] = (used / limit) * 100 if limit > 0 else 0
+                        else:
+                            quota_status[key] = 'healthy'
+                
+                app.logger.info(f"API Status: {quota_status}")
+            except Exception as e:
+                app.logger.error(f"Error getting quota status: {e}")
+                quota_status = {
+                    'quota_used': 0, 
+                    'quota_limit': 10000, 
+                    'quota_remaining': 10000, 
+                    'quota_percentage': 0, 
+                    'status': 'warning',
+                    'quota_exceeded': False,
+                    'error_message': f'Unable to check quota status: {str(e)}'
+                }
+            
     except Exception as e:
-        app.logger.warning(f"Failed to get quota status: {e}")
+        app.logger.error(f"Failed to get quota status: {e}")
         quota_status = {
             'quota_used': 0, 
             'quota_limit': 10000, 
             'quota_remaining': 10000, 
             'quota_percentage': 0, 
-            'status': 'healthy',
-            'quota_exceeded': False
+            'status': 'warning',
+            'quota_exceeded': False,
+            'error_message': f'Unable to check quota status: {str(e)}'
         }
+    
     return render_template('index.html', quota_status=quota_status)
 
 @app.route('/search', methods=['POST'])
 def search():
-    """Enhanced search with advanced filtering"""
+    """Enhanced search with advanced filtering and better error handling"""
     keyword = request.form.get('keyword', '').strip()
 
     if not keyword:
         flash('Please enter a search keyword', 'warning')
+        return redirect(url_for('index'))
+
+    # Validate keyword length
+    if len(keyword) < 2:
+        flash('Search keyword must be at least 2 characters long', 'warning')
+        return redirect(url_for('index'))
+
+    # Check if API key is available
+    if not youtube_service.api_key:
+        flash('YouTube API key not configured. Please contact administrator.', 'danger')
+        return redirect(url_for('index'))
+
+    # Check if YouTube service is initialized
+    if not youtube_service.youtube:
+        flash('YouTube API service not available. Please check API key configuration.', 'danger')
         return redirect(url_for('index'))
 
     # Get filter parameters
@@ -74,12 +138,12 @@ def search():
         try:
             filters['min_subscribers'] = int(min_subs)
         except ValueError:
-            pass
+            flash('Invalid minimum subscribers value', 'warning')
     if max_subs:
         try:
             filters['max_subscribers'] = int(max_subs)
         except ValueError:
-            pass
+            flash('Invalid maximum subscribers value', 'warning')
 
     # Video count filters
     min_videos = request.form.get('min_videos')
@@ -88,12 +152,12 @@ def search():
         try:
             filters['min_videos'] = int(min_videos)
         except ValueError:
-            pass
+            flash('Invalid minimum videos value', 'warning')
     if max_videos:
         try:
             filters['max_videos'] = int(max_videos)
         except ValueError:
-            pass
+            flash('Invalid maximum videos value', 'warning')
 
     # Activity filters
     min_upload_freq = request.form.get('min_upload_frequency')
@@ -102,45 +166,54 @@ def search():
         try:
             filters['min_upload_frequency'] = float(min_upload_freq)
         except ValueError:
-            pass
+            flash('Invalid upload frequency value', 'warning')
     if max_days_since:
         try:
             filters['max_days_since_upload'] = int(max_days_since)
         except ValueError:
-            pass
+            flash('Invalid days since upload value', 'warning')
 
     # Get max results
-    max_results = request.form.get('max_results', 50)
+    max_results = request.form.get('max_results', 25)  # Reduced default for speed
     try:
-        max_results = min(int(max_results), 200)  # Cap at 200
+        max_results = min(int(max_results), 100)  # Reduced cap for performance
     except ValueError:
-        max_results = 50
+        max_results = 25
 
     app.logger.info(f"Searching for keyword: {keyword} with filters: {filters}")
 
     try:
+        # Check quota before search
+        quota_status = youtube_service.get_quota_status()
+        if quota_status.get('quota_exceeded'):
+            flash('Daily YouTube API quota exceeded. Please try again tomorrow.', 'warning')
+            return redirect(url_for('index'))
+
         result = youtube_service.search_channels(keyword, max_results=max_results, filters=filters)
 
         if 'error' in result:
+            app.logger.error(f"Search API error: {result['error']}")
             flash(f'Search error: {result["error"]}', 'danger')
             return redirect(url_for('index'))
 
-        channels = result['channels']
-        quota_status = result
+        channels = result.get('channels', [])
 
         if not channels:
-            flash('No channels found matching your criteria. Try adjusting your filters.', 'info')
+            flash('No channels found matching your criteria. Try different keywords or adjust your filters.', 'info')
             return redirect(url_for('index'))
 
-        # Ensure quota_status has required keys before storing
-        if 'quota_used' not in result:
-            result['quota_used'] = youtube_service.daily_quota_used
-        if 'quota_limit' not in result:
-            result['quota_limit'] = youtube_service.max_daily_quota
-        if 'quota_remaining' not in result:
-            result['quota_remaining'] = max(0, youtube_service.max_daily_quota - youtube_service.daily_quota_used)
-        if 'quota_percentage' not in result:
-            result['quota_percentage'] = (youtube_service.daily_quota_used / youtube_service.max_daily_quota) * 100
+        # Ensure all required keys are present
+        required_keys = ['quota_used', 'quota_limit', 'quota_remaining', 'quota_percentage']
+        for key in required_keys:
+            if key not in result:
+                if key == 'quota_used':
+                    result[key] = youtube_service.daily_quota_used
+                elif key == 'quota_limit':
+                    result[key] = youtube_service.max_daily_quota
+                elif key == 'quota_remaining':
+                    result[key] = max(0, youtube_service.max_daily_quota - youtube_service.daily_quota_used)
+                elif key == 'quota_percentage':
+                    result[key] = (youtube_service.daily_quota_used / youtube_service.max_daily_quota) * 100
 
         # Store in session
         session['search_keyword'] = keyword
@@ -150,16 +223,19 @@ def search():
 
         # Store in database if available
         if db_service.is_connected():
-            db_service.save_search_history(keyword, len(channels), filters)
-            for channel in channels:
-                db_service.save_channel_data(channel)
+            try:
+                db_service.save_search_history(keyword, len(channels), filters)
+                for channel in channels:
+                    db_service.save_channel_data(channel)
+            except Exception as db_error:
+                app.logger.warning(f"Database save error: {str(db_error)}")
 
         flash(f'Found {len(channels)} channels for "{keyword}"', 'success')
         return redirect(url_for('results'))
 
     except Exception as e:
-        app.logger.error(f"Search error for keyword '{keyword}': {str(e)}")
-        flash(f'Search failed: {str(e)}', 'danger')
+        app.logger.error(f"Unexpected search error for keyword '{keyword}': {str(e)}")
+        flash('Search temporarily unavailable. Please try again in a few minutes.', 'danger')
         return redirect(url_for('index'))
 
 @app.route('/results')
@@ -447,8 +523,45 @@ def stats():
 
 @app.route('/api/quota-status')
 def api_quota_status():
-    """API endpoint for quota status"""
-    return jsonify(youtube_service.get_quota_status())
+    """API endpoint for quota status with error handling"""
+    try:
+        if not youtube_service.api_key:
+            return jsonify({
+                'quota_used': 0,
+                'quota_limit': 10000,
+                'quota_remaining': 0,
+                'quota_percentage': 0,
+                'status': 'error',
+                'quota_exceeded': True,
+                'error_message': 'API key not configured'
+            })
+        
+        if not youtube_service.youtube:
+            return jsonify({
+                'quota_used': 0,
+                'quota_limit': 10000,
+                'quota_remaining': 0,
+                'quota_percentage': 0,
+                'status': 'error',
+                'quota_exceeded': True,
+                'error_message': 'API service not initialized'
+            })
+        
+        status = youtube_service.get_quota_status()
+        app.logger.info(f"Quota Status API Response: {status}")
+        return jsonify(status)
+        
+    except Exception as e:
+        app.logger.error(f"Error in quota status API: {str(e)}")
+        return jsonify({
+            'quota_used': 0,
+            'quota_limit': 10000,
+            'quota_remaining': 10000,
+            'quota_percentage': 0,
+            'status': 'error',
+            'quota_exceeded': False,
+            'error_message': f'API error: {str(e)}'
+        }), 500
 
 @app.route('/clear-results')
 def clear_results():
@@ -461,4 +574,5 @@ def clear_results():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
