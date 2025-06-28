@@ -1,19 +1,16 @@
-
 import os
 import logging
 import re
 import requests
 import time
-import asyncio
-import aiohttp
+import concurrent.futures
+import whois
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from urllib.parse import urljoin, urlparse
-import whois
 from bs4 import BeautifulSoup
 from functools import lru_cache
-import concurrent.futures
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -27,7 +24,7 @@ class YouTubeService:
         self.daily_quota_used = 0
         self.max_daily_quota = 10000  # YouTube API v3 default quota
         self.last_reset = datetime.now().date()
-        
+
         # Reset quota if it's a new day
         if self.last_reset < datetime.now().date():
             self.daily_quota_used = 0
@@ -45,7 +42,7 @@ class YouTubeService:
                 self.youtube = None
         else:
             logging.warning("No YouTube API key found in environment variables")
-            
+
     def _test_api_key(self):
         """Test if the API key is valid with a minimal quota request"""
         try:
@@ -56,7 +53,8 @@ class YouTubeService:
                     type='channel',
                     maxResults=1
                 )
-                test_request.execute()
+                test_response = test_request.execute()
+                self.daily_quota_used += 100  # Search costs 100 units
                 logging.info("API key validation successful")
                 return True
         except HttpError as e:
@@ -78,7 +76,7 @@ class YouTubeService:
             self.quota_exceeded = False
             self.last_reset = datetime.now().date()
             logging.info("Daily quota reset")
-            
+
         if self.quota_exceeded:
             logging.warning("YouTube API quota exceeded. Please wait or use backup API key.")
             return False
@@ -203,7 +201,13 @@ class YouTubeService:
             search_response = search_request.execute()
             self.daily_quota_used += 100
 
-            video_ids = [item['id']['videoId'] for item in search_response['items']]
+            video_ids = []
+            for item in search_response['items']:
+                if 'id' in item:
+                    if isinstance(item['id'], dict) and 'videoId' in item['id']:
+                        video_ids.append(item['id']['videoId'])
+                    elif isinstance(item['id'], str):
+                        video_ids.append(item['id'])
 
             if not video_ids:
                 return {
@@ -286,6 +290,13 @@ class YouTubeService:
 
         if not self.check_quota_status():
             return {'error': 'YouTube API quota exceeded. Please wait 24 hours or use a backup API key.'}
+        
+        # Validate inputs
+        if not keyword or not keyword.strip():
+            return {'error': 'Search keyword cannot be empty.'}
+        
+        keyword = keyword.strip()
+        max_results = min(max(int(max_results or 50), 1), 100)
 
         try:
             all_results = []
@@ -296,12 +307,12 @@ class YouTubeService:
             for page in range(max_pages):
                 if len(all_results) >= max_results:
                     break
-                    
-                # Search for channels
+
+                # Search for channels - FIXED: Use proper channel search
                 search_request = self.youtube.search().list(
                     part='snippet',
                     q=keyword,
-                    type='channel',
+                    type='channel',  # This is crucial - we're searching for channels
                     maxResults=results_per_page,
                     pageToken=next_page_token
                 )
@@ -309,44 +320,51 @@ class YouTubeService:
                 search_response = search_request.execute()
                 self.daily_quota_used += 100
 
-                # Extract channel IDs with enhanced error handling
+                # Extract channel IDs - PROPERLY FIXED
                 channel_ids = []
                 for item in search_response.get('items', []):
                     try:
-                        # Handle different response structures
                         channel_id = None
                         
-                        if 'id' in item:
-                            if isinstance(item['id'], dict):
-                                # Standard search response format
-                                if 'channelId' in item['id']:
-                                    channel_id = item['id']['channelId']
-                                elif 'kind' in item['id'] and item['id']['kind'] == 'youtube#channel':
-                                    # Sometimes channelId is in a different field
-                                    channel_id = item['id'].get('channelId')
-                            elif isinstance(item['id'], str):
-                                # Sometimes ID is a direct string
-                                channel_id = item['id']
+                        # For channel search type='channel', the ID is in item['id']['channelId']
+                        if 'id' in item and isinstance(item['id'], dict):
+                            channel_id = item['id'].get('channelId')
                         
-                        # Fallback: check snippet for channel ID
+                        # Fallback: sometimes it's directly a string
+                        elif 'id' in item and isinstance(item['id'], str):
+                            channel_id = item['id']
+                        
+                        # Another fallback: check snippet
                         if not channel_id and 'snippet' in item:
-                            snippet = item['snippet']
-                            if 'channelId' in snippet:
-                                channel_id = snippet['channelId']
-                        
+                            channel_id = item['snippet'].get('channelId')
+
                         if channel_id and channel_id not in channel_ids:
                             channel_ids.append(channel_id)
                             logging.info(f"Found channel ID: {channel_id}")
-                        else:
-                            logging.warning(f"Could not extract channelId from item: {item.get('id', 'No ID field')}")
-                            
-                    except (KeyError, TypeError, AttributeError) as e:
+
+                    except Exception as e:
                         logging.warning(f"Error extracting channelId from item: {e}")
                         continue
 
                 if not channel_ids:
                     logging.warning("No valid channel IDs found in search results")
-                    break
+                    # Try a different approach - search for the keyword directly as channel name
+                    try:
+                        alt_search = self.youtube.channels().list(
+                            part='snippet,statistics',
+                            forUsername=keyword,
+                            maxResults=1
+                        )
+                        alt_response = alt_search.execute()
+                        self.daily_quota_used += 1
+
+                        if alt_response.get('items'):
+                            channel_ids = [alt_response['items'][0]['id']]
+                    except:
+                        pass
+
+                    if not channel_ids:
+                        break
 
                 # Get detailed channel information
                 channels_request = self.youtube.channels().list(
@@ -358,22 +376,36 @@ class YouTubeService:
                 self.daily_quota_used += 1
 
                 # Process channels with parallel contact enrichment
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = []
-                    
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        futures = []
+
+                        for channel in channels_response['items']:
+                            future = executor.submit(self._process_channel, channel, filters)
+                            futures.append(future)
+
+                        for future in concurrent.futures.as_completed(futures):
+                            try:
+                                result = future.result(timeout=10)  # 10 second timeout per channel
+                                if result:
+                                    all_results.append(result)
+                                    if len(all_results) >= max_results:
+                                        break
+                            except Exception as e:
+                                logging.error(f"Error processing channel: {str(e)}")
+                                continue
+                except Exception as executor_error:
+                    logging.error(f"ThreadPoolExecutor error: {executor_error}")
+                    # Fallback to sequential processing
                     for channel in channels_response['items']:
-                        future = executor.submit(self._process_channel, channel, filters)
-                        futures.append(future)
-                    
-                    for future in concurrent.futures.as_completed(futures):
                         try:
-                            result = future.result(timeout=10)  # 10 second timeout per channel
+                            result = self._process_channel(channel, filters)
                             if result:
                                 all_results.append(result)
                                 if len(all_results) >= max_results:
                                     break
                         except Exception as e:
-                            logging.error(f"Error processing channel: {str(e)}")
+                            logging.error(f"Error processing channel sequentially: {str(e)}")
                             continue
 
                 # Check for next page
@@ -460,7 +492,8 @@ class YouTubeService:
             # Extract emails from description
             description = snippet.get('description', '')
             emails = self.extract_emails_from_text(description)
-            contact_info['emails'].extend(emails)
+            if emails:
+                contact_info['emails'].extend(list(emails))
 
             # Quick URL extraction from description
             website_url = None
@@ -515,7 +548,7 @@ class YouTubeService:
             self.daily_quota_used = 0
             self.quota_exceeded = False
             self.last_reset = datetime.now().date()
-            
+
         quota_used = getattr(self, 'daily_quota_used', 0)
         quota_limit = getattr(self, 'max_daily_quota', 10000)
 

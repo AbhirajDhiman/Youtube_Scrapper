@@ -76,7 +76,7 @@ def index():
                             quota_status[key] = (used / limit) * 100 if limit > 0 else 0
                         else:
                             quota_status[key] = 'healthy'
-                
+
                 app.logger.info(f"API Status: {quota_status}")
             except Exception as e:
                 app.logger.error(f"Error getting quota status: {e}")
@@ -89,7 +89,7 @@ def index():
                     'quota_exceeded': False,
                     'error_message': f'Unable to check quota status: {str(e)}'
                 }
-            
+
     except Exception as e:
         app.logger.error(f"Failed to get quota status: {e}")
         quota_status = {
@@ -101,7 +101,7 @@ def index():
             'quota_exceeded': False,
             'error_message': f'Unable to check quota status: {str(e)}'
         }
-    
+
     return render_template('index.html', quota_status=quota_status)
 
 @app.route('/search', methods=['POST'])
@@ -535,7 +535,7 @@ def api_quota_status():
                 'quota_exceeded': True,
                 'error_message': 'API key not configured'
             })
-        
+
         if not youtube_service.youtube:
             return jsonify({
                 'quota_used': 0,
@@ -546,11 +546,11 @@ def api_quota_status():
                 'quota_exceeded': True,
                 'error_message': 'API service not initialized'
             })
-        
+
         status = youtube_service.get_quota_status()
         app.logger.info(f"Quota Status API Response: {status}")
         return jsonify(status)
-        
+
     except Exception as e:
         app.logger.error(f"Error in quota status API: {str(e)}")
         return jsonify({

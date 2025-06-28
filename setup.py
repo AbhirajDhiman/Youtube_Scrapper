@@ -1,58 +1,55 @@
+
 #!/usr/bin/env python3
 """
-Setup script for YouTube Channel Discovery Tool
-Run this script to set up the project in VS Code
+YouTube Channel Discovery Tool Setup Script
 """
 
 import os
 import sys
-import subprocess
 
-def setup_project():
-    """Set up the YouTube Channel Discovery project"""
-    print("🚀 Setting up YouTube Channel Discovery Tool...")
-    
-    # Check Python version
+def check_python_version():
+    """Check if Python version is compatible"""
     if sys.version_info < (3, 8):
-        print("❌ Error: Python 3.8 or higher is required")
+        print("❌ Python 3.8 or higher is required")
+        print(f"Current version: {sys.version}")
         sys.exit(1)
+    print(f"✅ Python version: {sys.version}")
+
+def check_environment_variables():
+    """Check if required environment variables are set"""
+    required_vars = ['GOOGLE_API_KEY']
+    missing_vars = []
     
-    print(f"✅ Python {sys.version.split()[0]} detected")
+    for var in required_vars:
+        if not os.environ.get(var):
+            missing_vars.append(var)
     
-    # Install dependencies
-    print("\n📦 Installing dependencies...")
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements_for_vscode.txt"])
-        print("✅ Dependencies installed successfully")
-    except subprocess.CalledProcessError:
-        print("❌ Failed to install dependencies")
-        print("Please run: pip install -r requirements_for_vscode.txt")
+    if missing_vars:
+        print("❌ Missing required environment variables:")
+        for var in missing_vars:
+            print(f"   - {var}")
+        print("\n💡 Set these in your .env file or Replit Secrets")
         return False
     
-    # Check if .env file exists
-    if not os.path.exists('.env'):
-        print("\n⚙️  Creating .env file from template...")
-        try:
-            with open('.env.template', 'r') as template:
-                content = template.read()
-            with open('.env', 'w') as env_file:
-                env_file.write(content)
-            print("✅ .env file created")
-            print("📝 Please edit .env file and add your GOOGLE_API_KEY")
-        except Exception as e:
-            print(f"❌ Error creating .env file: {e}")
-            return False
-    else:
-        print("✅ .env file already exists")
-    
-    print("\n🎉 Setup complete!")
-    print("\n📋 Next steps:")
-    print("1. Edit .env file and add your YouTube API key")
-    print("2. Run: python main.py")
-    print("3. Open http://localhost:5000 in your browser")
-    print("\n🔑 Get YouTube API key from: https://console.cloud.google.com")
-    
+    print("✅ All required environment variables are set")
     return True
 
+def main():
+    """Main setup function"""
+    print("🚀 YouTube Channel Discovery Tool Setup")
+    print("=" * 50)
+    
+    check_python_version()
+    
+    if check_environment_variables():
+        print("\n✅ Setup complete!")
+        print("\n📖 Next steps:")
+        print("1. Ensure all dependencies are installed: pip install -r requirements_for_vscode.txt")
+        print("2. Run: python main.py")
+        print("3. Open http://0.0.0.0:5000 in your browser")
+        print("\n🔑 Get YouTube API key from: https://console.cloud.google.com/")
+    else:
+        print("\n❌ Setup incomplete - fix environment variables and try again")
+
 if __name__ == "__main__":
-    setup_project()
+    main()

@@ -90,7 +90,7 @@
                                         </select>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Quick Presets -->
                                 <div class="filter-presets mt-4">
                                     <h6 class="preset-title mb-3">Quick Presets</h6>
@@ -403,7 +403,7 @@ function initializeHeroSearch() {
 
 function initializeAdvancedSearch() {
     const presetCards = document.querySelectorAll('.preset-card-small');
-    
+
     // Preset filter functionality
     presetCards.forEach(card => {
         card.addEventListener('click', function() {
@@ -439,7 +439,7 @@ function initializeAdvancedSearch() {
 function toggleAdvancedFilters() {
     const panel = document.getElementById('advanced-filters-panel');
     const btn = document.querySelector('.hero-filters-btn');
-    
+
     if (panel.style.display === 'none' || !panel.style.display) {
         panel.style.display = 'block';
         btn.classList.add('active');
